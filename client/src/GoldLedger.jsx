@@ -7,7 +7,13 @@ import {
   ResponsiveContainer, Cell,
 } from "recharts";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
+
+const getPhotoUrl = (photo) => {
+  if (!photo) return null;
+  const path = photo.startsWith('/') ? photo : `/uploads/${photo}`;
+  return `${API_BASE}${path}`;
+};
 
 // ── display helpers ──────────────────────────────────────────────────────────
 const mgToG = (mg) =>
@@ -107,6 +113,24 @@ export default function GoldLedger({ token, user, onLogout }) {
   const [editTarget,       setEditTarget]       = useState(null);
   const [search,           setSearch]           = useState("");
   const [lightboxPhoto,    setLightboxPhoto]    = useState(null);
+  const [isCollapsed,      setIsCollapsed]      = useState(false);
+  const [showProfileMenu,  setShowProfileMenu]  = useState(false);
+  const [activeActionMenu, setActiveActionMenu] = useState(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      try {
+        const el = event.target.nodeType === 3 ? event.target.parentNode : event.target;
+        if (el && typeof el.closest === 'function' && !el.closest('.action-menu-container')) {
+          setActiveActionMenu(prev => (prev ? null : prev));
+        }
+      } catch (e) {
+        // ignore safely
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const api = useMemo(() => {
     const apiFetch = async (path, opts = {}) => {
@@ -193,6 +217,9 @@ export default function GoldLedger({ token, user, onLogout }) {
   const navigate = (newView) => {
     setView(newView);
     setError(null);
+    if (newView === "accounts") {
+      setActiveId(null);
+    }
     if (newView !== "accounts") {
       setShowAddEntry(false);
       setEditTarget(null);
@@ -261,34 +288,174 @@ export default function GoldLedger({ token, user, onLogout }) {
   const balance = rows.length ? rows[rows.length - 1].runningBalanceMg : 0;
 
   const q = search.trim().toLowerCase();
+  const allAccountsToFilter = [...accounts, ...(isAdmin ? archivedAccounts : [])];
   const filteredAccounts = q
-    ? accounts.filter((a) => a.name.toLowerCase().includes(q) || (a.place ?? "").toLowerCase().includes(q))
-    : accounts;
+    ? allAccountsToFilter.filter((a) => a.name.toLowerCase().includes(q) || (a.place ?? "").toLowerCase().includes(q))
+    : allAccountsToFilter;
 
   // ── nav item renderer ──────────────────────────────────────────────────────
-  const NavItem = ({ id, label }) => (
-    <button onClick={() => navigate(id)}
-      style={{
-        display: "block", width: "100%", textAlign: "left",
-        padding: "11px 14px", background: view === id ? P.ink : "transparent",
-        border: "none", borderRadius: 8,
-        borderLeft: view === id ? `3px solid ${P.gold}` : "3px solid transparent",
-        color: view === id ? P.paper : P.mute,
-        cursor: "pointer", fontFamily: "inherit", fontSize: 14,
-        WebkitTapHighlightColor: "transparent",
-      }}>
-      {label}
-    </button>
-  );
+  const NAV_ICONS = {
+    overview: () => (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+        <rect x="3" y="3" width="7" height="9" />
+        <rect x="14" y="3" width="7" height="5" />
+        <rect x="14" y="12" width="7" height="9" />
+        <rect x="3" y="16" width="7" height="5" />
+      </svg>
+    ),
+    accounts: () => (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      </svg>
+    ),
+    users: () => (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    ),
+    profile: () => (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    )
+  };
+
+  const NavItem = ({ id, label }) => {
+    const active = view === id;
+    const IconComponent = NAV_ICONS[id];
+    return (
+      <button onClick={() => navigate(id)}
+        className={`nav-item ${active ? "active" : ""} ${isCollapsed ? "collapsed" : ""}`}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: isCollapsed ? "center" : "flex-start",
+          width: "100%",
+          padding: isCollapsed ? "11px 0" : "11px 14px",
+          background: active ? P.ink : "transparent",
+          border: "none",
+          borderRadius: 8,
+          borderLeft: `3px solid ${active ? P.gold : "transparent"}`,
+          color: active ? P.paper : P.mute,
+          cursor: "pointer",
+          fontFamily: "inherit",
+          fontSize: 14,
+          transition: "all 0.2s ease-in-out",
+          WebkitTapHighlightColor: "transparent",
+        }}>
+        <span style={{
+          fontSize: 16,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: isCollapsed ? 24 : "auto",
+          color: active ? P.gold : P.mute,
+          transition: "color 0.2s ease-in-out"
+        }}>
+          {IconComponent ? <IconComponent /> : "•"}
+        </span>
+        {!isCollapsed && (
+          <span className="nav-label" style={{ marginLeft: 10, display: "inline-block" }}>
+            {label}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <div style={{ display: "flex", height: "100vh", background: P.ink, color: P.paper, fontFamily: "Georgia, 'Times New Roman', serif", overflow: "hidden" }}>
+      <style>{`
+        .nav-item {
+          transition: all 0.2s ease-in-out;
+        }
+        .nav-item:hover {
+          background: rgba(201, 162, 39, 0.08) !important;
+          color: #f3efe6 !important;
+        }
+        .nav-item:hover .nav-label {
+          transform: translateX(4px);
+        }
+        .nav-label {
+          transition: transform 0.2s ease-in-out;
+        }
+        .brand-header {
+          transition: all 0.2s ease-in-out;
+        }
+        .brand-header:hover {
+          filter: brightness(1.2);
+          opacity: 0.95;
+        }
+        .signout-btn {
+          transition: all 0.2s ease;
+        }
+        .signout-btn:hover {
+          border-color: #c9a227 !important;
+          color: #c9a227 !important;
+          background: rgba(201, 162, 39, 0.04) !important;
+        }
+        .dropdown-item {
+          transition: all 0.2s ease-in-out;
+        }
+        .dropdown-item:hover {
+          background: #1a1712 !important;
+          color: #c9a227 !important;
+        }
+        .dropdown-item-danger {
+          transition: all 0.2s ease-in-out;
+        }
+        .dropdown-item-danger:hover {
+          background: #1a1712 !important;
+          color: #d98c8c !important;
+        }
+        .ledger-row-action {
+          opacity: 0.4;
+          transition: all 0.2s;
+        }
+        .ledger-row:hover .ledger-row-action {
+          opacity: 1 !important;
+        }
+        .ledger-row-action:hover {
+          color: #c9a227 !important;
+        }
+      `}</style>
 
       {/* ── persistent nav ── */}
-      <nav style={{ width: 190, background: P.panel, borderRight: `1px solid ${P.line}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-        <div style={{ padding: "18px 16px 14px", display: "flex", alignItems: "center", gap: 10, color: P.gold }}>
-          <HorseMark width={22} />
-          <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase" }}>Gamage Jewellers</span>
+      <nav style={{
+        width: isCollapsed ? 76 : 190,
+        background: P.panel,
+        borderRight: `1px solid ${P.line}`,
+        display: "flex",
+        flexDirection: "column",
+        flexShrink: 0,
+        transition: "width 0.3s ease-in-out",
+        position: "relative",
+        overflow: isCollapsed ? "visible" : "hidden"
+      }}>
+        <div onClick={() => { setIsCollapsed(!isCollapsed); setShowProfileMenu(false); }}
+          className="brand-header"
+          style={{
+            padding: "18px 16px 14px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: isCollapsed ? "center" : "flex-start",
+            gap: 10,
+            color: P.gold,
+            cursor: "pointer",
+            userSelect: "none",
+            transition: "all 0.2s ease-in-out"
+          }}>
+          <HorseMark width={22} style={{ flexShrink: 0 }} />
+          {!isCollapsed && (
+            <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", fontWeight: "bold" }}>
+              Gamage Jewellers
+            </span>
+          )}
         </div>
 
         <div style={{ flex: 1, padding: "0 10px", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -298,89 +465,52 @@ export default function GoldLedger({ token, user, onLogout }) {
           <NavItem id="profile" label="My Profile" />
         </div>
 
-        <div style={{ padding: "16px 18px", borderTop: `1px solid ${P.line}` }}>
-          <div style={{ fontSize: 12, color: P.paper, marginBottom: 2 }}>{user?.name}</div>
-          <div style={{ fontSize: 10, color: P.mute, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>{user?.role}</div>
-          <button onClick={onLogout}
-            style={{ width: "100%", padding: "7px 0", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
-            Sign out
-          </button>
-        </div>
-      </nav>
-
-      {/* ── account list panel (only when on Accounts view) ── */}
-      {view === "accounts" && (
-        <aside style={{ width: 220, borderRight: `1px solid ${P.line}`, background: P.panel, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-          <div style={{ padding: "0 12px 10px", paddingTop: 16 }}>
-            <input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search accounts…"
-              style={{ ...inp(), fontSize: 12, padding: "6px 10px", background: P.ink }} />
+        {!isCollapsed ? (
+          <div style={{ padding: "16px 18px", borderTop: `1px solid ${P.line}`, overflow: "hidden" }}>
+            <div style={{ fontSize: 12, color: P.paper, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.name}</div>
+            <div style={{ fontSize: 10, color: P.mute, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.role}</div>
+            <button onClick={onLogout}
+              className="signout-btn"
+              style={{ width: "100%", padding: "7px 0", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              Sign out
+            </button>
           </div>
-
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {loadingList ? (
-              <div style={{ padding: 20, color: P.mute, fontStyle: "italic", fontSize: 13 }}>Loading…</div>
-            ) : listError ? (
-              <div style={{ padding: 16 }}>
-                <div style={{ color: P.red, fontSize: 12, marginBottom: 8 }}>{listError}</div>
-                <button onClick={loadAccounts} style={{ fontSize: 12, color: P.mute, background: "none", border: `1px solid ${P.line}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit" }}>Retry</button>
+        ) : (
+          <div style={{ padding: "16px 0", borderTop: `1px solid ${P.line}`, display: "flex", justifyContent: "center", position: "relative" }}>
+            <button onClick={() => setShowProfileMenu(!showProfileMenu)}
+              style={{
+                width: 36, height: 36, borderRadius: "50%", background: P.line, color: P.gold,
+                border: `1px solid ${P.gold}`, display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", fontSize: 14, fontWeight: "bold", fontFamily: "inherit", position: "relative"
+              }}>
+              {user?.name ? user.name[0].toUpperCase() : "U"}
+            </button>
+            
+            {showProfileMenu && (
+              <div style={{
+                position: "absolute", bottom: 60, left: 12, width: 150,
+                background: P.panel, border: `1px solid ${P.line}`, borderRadius: 8,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.5)", padding: 10, zIndex: 50,
+                display: "flex", flexDirection: "column", gap: 6
+              }}>
+                <div style={{ fontSize: 11, color: P.paper, fontWeight: "bold", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{user?.name}</div>
+                <div style={{ fontSize: 9, color: P.mute, textTransform: "uppercase", letterSpacing: 1 }}>{user?.role}</div>
+                <hr style={{ border: "none", borderTop: `1px solid ${P.line}`, margin: "4px 0" }} />
+                <button onClick={onLogout}
+                  className="signout-btn"
+                  style={{
+                    padding: "6px 0", width: "100%", background: "transparent", color: P.red,
+                    border: `1px solid ${P.red}`, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: "inherit"
+                  }}>
+                  Sign out
+                </button>
               </div>
-            ) : (
-              <>
-                {filteredAccounts.length === 0
-                  ? <div style={{ padding: 20, color: P.mute, fontStyle: "italic", fontSize: 12 }}>{q ? "No matches." : "No accounts yet."}</div>
-                  : filteredAccounts.map((a) => {
-                      const on  = a._id === activeId;
-                      const bal = a.balanceMg ?? 0;
-                      return (
-                        <button key={a._id} onClick={() => selectAccount(a._id)}
-                          style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 16px", background: on ? P.ink : "transparent", border: "none", borderLeft: on ? `3px solid ${P.gold}` : `3px solid transparent`, color: on ? P.paper : P.mute, cursor: "pointer", fontFamily: "inherit" }}>
-                          <div style={{ fontSize: 14 }}>{a.name}</div>
-                          <div style={{ fontSize: 11, fontStyle: "italic", marginTop: 1 }}>{a.place}</div>
-                          <div style={{ fontSize: 11, fontFamily: "'SF Mono', Menlo, monospace", color: bal < 0 ? P.red : P.gold, marginTop: 2 }}>
-                            {bal < 0 ? "−" : ""}{mgToG(Math.abs(bal))} g
-                          </div>
-                        </button>
-                      );
-                    })
-                }
-                {isAdmin && archivedAccounts.length > 0 && (
-                  <>
-                    <button onClick={() => setShowArchived((s) => !s)}
-                      style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 16px", background: "transparent", border: "none", borderTop: `1px solid ${P.line}`, color: P.mute, cursor: "pointer", fontFamily: "inherit", fontSize: 11, letterSpacing: 1, textTransform: "uppercase", marginTop: 8 }}>
-                      {showArchived ? "▾" : "▸"} Archived ({archivedAccounts.length})
-                    </button>
-                    {showArchived && archivedAccounts.map((a) => {
-                      const on  = a._id === activeId;
-                      const bal = a.balanceMg ?? 0;
-                      return (
-                        <button key={a._id} onClick={() => selectAccount(a._id)}
-                          style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 16px", background: on ? P.ink : "transparent", border: "none", borderLeft: on ? `3px solid ${P.mute}` : `3px solid transparent`, color: on ? P.mute : "#5a5248", cursor: "pointer", fontFamily: "inherit" }}>
-                          <div style={{ fontSize: 14 }}>{a.name}</div>
-                          <div style={{ fontSize: 11, fontStyle: "italic", marginTop: 1 }}>{a.place}</div>
-                          <div style={{ fontSize: 11, fontFamily: "'SF Mono', Menlo, monospace", color: bal < 0 ? P.red : "#6a6050", marginTop: 2 }}>
-                            {bal < 0 ? "−" : ""}{mgToG(Math.abs(bal))} g
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </>
-                )}
-              </>
             )}
           </div>
+        )}
+      </nav>
 
-          <div style={{ padding: 12, borderTop: `1px solid ${P.line}` }}>
-            {showNewAcct
-              ? <CreateAccountForm onSubmit={handleCreateAccount} onCancel={() => setShowNewAcct(false)} />
-              : <button onClick={() => setShowNewAcct(true)}
-                  style={{ width: "100%", padding: "8px 0", background: "transparent", color: P.gold, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
-                  + New account
-                </button>
-            }
-          </div>
-        </aside>
-      )}
+
 
       {/* ── main content ── */}
       <main style={{ flex: 1, overflowY: "auto", padding: 28, minWidth: 0 }}>
@@ -399,118 +529,278 @@ export default function GoldLedger({ token, user, onLogout }) {
             : <OverviewPanel accounts={accounts} onSelect={selectAccount} stats={stats} />
         )}
 
-        {/* Accounts — no account selected */}
-        {view === "accounts" && !activeId && (
-          <div style={{ color: P.mute, fontStyle: "italic", marginTop: 80, textAlign: "center" }}>
-            {accounts.length === 0 ? "No accounts yet — create one from the list." : "Select an account from the list."}
-          </div>
-        )}
-
-        {/* Accounts — ledger */}
-        {view === "accounts" && activeId && (
-          loadingLedger ? (
-            <div style={{ color: P.mute, fontStyle: "italic", marginTop: 80, textAlign: "center" }}>Loading…</div>
-          ) : activeAccount ? (
-            <>
-              {/* account header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22 }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div style={{ fontSize: 26, lineHeight: 1.1 }}>{activeAccount.name}</div>
-                    {activeAccount.archived && (
-                      <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 4, padding: "2px 6px" }}>Archived</span>
-                    )}
-                  </div>
-                  <div style={{ color: P.mute, fontStyle: "italic", fontSize: 14, marginTop: 4 }}>
-                    {activeAccount.place}{activeAccount.phone ? ` · ${activeAccount.phone}` : ""}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: P.mute }}>Balance owed</div>
-                  <div style={{ fontFamily: "'SF Mono', Menlo, monospace", fontSize: 30, color: balance >= 0 ? P.gold : P.red }}>
-                    {balance < 0 ? "−" : ""}{mgToG(Math.abs(balance))} <span style={{ fontSize: 14, color: P.mute }}>g · 24kt</span>
-                  </div>
-                </div>
+        {/* Accounts view */}
+        {view === "accounts" && (
+          !activeId ? (
+            // View A: Accounts Directory
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search accounts…"
+                  style={{ ...inp(), width: 320, fontSize: 14 }}
+                />
+                <button onClick={() => setShowNewAcct(true)}
+                  style={{ padding: "10px 18px", background: P.gold, color: P.ink, border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: "bold" }}>
+                  + New Account
+                </button>
               </div>
-
-              {/* toolbar */}
-              <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
-                {!activeAccount.archived && (
-                  <button onClick={() => setShowAddEntry((s) => !s)}
-                    style={{ padding: "9px 16px", background: showAddEntry ? "transparent" : P.gold, color: showAddEntry ? P.gold : P.ink, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
-                    {showAddEntry ? "Cancel" : "+ New entry"}
-                  </button>
-                )}
-                {rows.length > 0 && (
-                  <button onClick={() => downloadCSV(activeAccount, rows)}
-                    style={{ padding: "9px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
-                    ↓ Export CSV
-                  </button>
-                )}
-                {isAdmin && !activeAccount.archived && (
-                  <button onClick={handleArchiveAccount}
-                    style={{ marginLeft: "auto", padding: "9px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
-                    Archive
-                  </button>
-                )}
-                {isAdmin && activeAccount.archived && (
-                  <button onClick={handleUnarchiveAccount}
-                    style={{ padding: "9px 14px", background: "transparent", color: P.gold, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
-                    Unarchive
-                  </button>
-                )}
-              </div>
-
-              {showAddEntry && <EntryForm onSubmit={handleAddEntry} onCancel={() => setShowAddEntry(false)} />}
-
-              {/* ledger table */}
-              <div style={{ border: `1px solid ${P.line}`, borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "88px 1fr 120px 110px 130px 64px", padding: "10px 14px", background: P.panel, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: P.mute }}>
-                  <span>Date</span><span>Detail</span><span>Type</span>
-                  <span style={{ textAlign: "right" }}>Change (g)</span>
-                  <span style={{ textAlign: "right" }}>Balance (g)</span>
-                  <span />
+              
+              {showNewAcct && (
+                <div style={{ background: P.panel, border: `1px solid ${P.line}`, borderRadius: 10, padding: 18 }}>
+                  <CreateAccountForm
+                    onSubmit={(data) => { handleCreateAccount(data); setShowNewAcct(false); }}
+                    onCancel={() => setShowNewAcct(false)}
+                  />
                 </div>
-                {rows.length === 0 && (
-                  <div style={{ padding: 24, textAlign: "center", color: P.mute, fontStyle: "italic" }}>No entries yet.</div>
-                )}
-                {rows.map((r) => {
-                  const m = TYPE_META[r.type];
-                  return (
-                    <div key={r._id} style={{ display: "grid", gridTemplateColumns: "88px 1fr 120px 110px 130px 64px", padding: "12px 14px", borderTop: `1px solid ${P.line}`, alignItems: "center" }}>
-                      <span style={{ color: P.mute, fontFamily: "Georgia, serif", fontSize: 13 }}>
-                        {new Date(r.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
-                      </span>
-                      <span style={{ fontFamily: "Georgia, serif", fontSize: 14 }}>
-                        <span style={{ color: m.color }}>● </span>{r.details}
-                        {r.photo && (
-                          <button onClick={() => setLightboxPhoto(`${API_BASE}/uploads/${r.photo}`)}
-                            title="View photo" style={{ background: "none", border: "none", cursor: "pointer", padding: "0 4px", fontSize: 13, verticalAlign: "middle", opacity: 0.7 }}>📷</button>
-                        )}
-                        <div style={{ fontSize: 11, color: P.mute, marginTop: 2 }}>{describe(r)}</div>
-                        <div style={{ fontSize: 10, color: "#5a5248", marginTop: 2 }}>{lastEditor(r)}</div>
-                      </span>
-                      <span style={{ color: m.color, fontFamily: "Georgia, serif", fontSize: 12 }}>{m.label}</span>
-                      <span style={{ textAlign: "right", fontFamily: "'SF Mono', Menlo, monospace", fontSize: 13, color: r.amountMg >= 0 ? P.gold : P.green }}>
-                        {r.amountMg >= 0 ? "+" : ""}{mgToG(r.amountMg)}
-                      </span>
-                      <span style={{ textAlign: "right", fontFamily: "'SF Mono', Menlo, monospace", fontSize: 13, color: r.runningBalanceMg < 0 ? P.red : P.paper }}>
-                        {r.runningBalanceMg < 0 ? "−" : ""}{mgToG(Math.abs(r.runningBalanceMg))}
-                      </span>
-                      <span style={{ textAlign: "right" }}>
-                        {user?.role !== "operator" && (
-                          <button onClick={() => setEditTarget(r)} style={iconBtn(P.mute)} title="Edit">✎</button>
-                        )}
-                        {isAdmin && (
-                          <button onClick={() => handleVoidEntry(r._id)} style={iconBtn(P.red)} title="Void">✕</button>
-                        )}
-                      </span>
+              )}
+
+              {filteredAccounts.length === 0 ? (
+                <div style={{ padding: 40, textAlign: "center", color: P.mute, fontStyle: "italic", border: `1px dashed ${P.line}`, borderRadius: 10 }}>
+                  {q ? "No accounts match your search." : "No accounts found. Create one above."}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+                  {filteredAccounts.map((a) => {
+                    const bal = a.balanceMg ?? 0;
+                    return (
+                      <div key={a._id} onClick={() => selectAccount(a._id)}
+                        style={{ background: P.panel, border: `1px solid ${P.line}`, borderRadius: 10, padding: 20, cursor: "pointer", transition: "transform 0.2s, background 0.2s, borderColor 0.2s" }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.borderColor = P.gold; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = P.panel; e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.borderColor = P.line; }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                          <div style={{ fontSize: 18, color: P.paper, fontFamily: "Georgia, serif", fontWeight: "bold" }}>{a.name}</div>
+                          {a.archived && (
+                            <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 4, padding: "2px 6px" }}>Archived</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 13, color: P.mute, fontStyle: "italic", marginBottom: 16 }}>{a.place || "No location"}</div>
+                        <div style={{ fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: P.mute, marginBottom: 6 }}>Balance Owed</div>
+                        <div style={{ fontFamily: "'SF Mono', Menlo, monospace", fontSize: 22, color: bal < 0 ? P.red : bal === 0 ? P.mute : P.gold }}>
+                          {bal < 0 ? "−" : ""}{mgToG(Math.abs(bal))} <span style={{ fontSize: 13, color: P.mute }}>g</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            // View B: Dedicated Ledger View
+            loadingLedger ? (
+              <div style={{ color: P.mute, fontStyle: "italic", marginTop: 80, textAlign: "center" }}>Loading…</div>
+            ) : activeAccount ? (
+              <>
+                <button onClick={() => setActiveId(null)}
+                  style={{ background: "none", border: "none", color: P.gold, fontSize: 14, fontFamily: "inherit", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 0", marginBottom: 24 }}>
+                  <span>←</span> Back to Accounts
+                </button>
+                
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 26 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ color: P.paper, fontSize: 28, lineHeight: 1.1, fontFamily: "inherit", fontWeight: "bold" }}>
+                        {activeAccount.name}
+                      </div>
+                      {activeAccount?.archived && (
+                        <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 4, padding: "2px 6px" }}>Archived</span>
+                      )}
                     </div>
-                  );
-                })}
+                    <div style={{ color: P.mute, fontStyle: "italic", fontSize: 14, marginTop: 6 }}>
+                      {activeAccount.place}{activeAccount.phone ? ` · ${activeAccount.phone}` : ""}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: P.mute }}>Balance owed</div>
+                    <div style={{ fontFamily: "'SF Mono', Menlo, monospace", fontSize: 32, color: balance >= 0 ? P.gold : P.red }}>
+                      {balance < 0 ? "−" : ""}{mgToG(Math.abs(balance))} <span style={{ fontSize: 14, color: P.mute }}>g · 24kt</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* toolbar */}
+                <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
+                  {!activeAccount.archived && (
+                    <button onClick={() => setShowAddEntry((s) => !s)}
+                      style={{ padding: "9px 16px", background: showAddEntry ? "transparent" : P.gold, color: showAddEntry ? P.gold : P.ink, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
+                      {showAddEntry ? "Cancel" : "+ New entry"}
+                    </button>
+                  )}
+                  {rows.length > 0 && (
+                    <button onClick={() => downloadCSV(activeAccount, rows)}
+                      style={{ padding: "9px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
+                      ↓ Export CSV
+                    </button>
+                  )}
+                  {isAdmin && !activeAccount.archived && (
+                    <button onClick={handleArchiveAccount}
+                      style={{ marginLeft: "auto", padding: "9px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
+                      Archive
+                    </button>
+                  )}
+                  {isAdmin && activeAccount.archived && (
+                    <button onClick={handleUnarchiveAccount}
+                      style={{ marginLeft: "auto", padding: "9px 14px", background: "transparent", color: P.gold, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
+                      Unarchive
+                    </button>
+                  )}
+                </div>
+
+                {showAddEntry && <EntryForm onSubmit={handleAddEntry} onCancel={() => setShowAddEntry(false)} />}
+
+                {/* ledger table */}
+                <div style={{ border: `1px solid ${P.line}`, borderRadius: 10, overflow: "visible" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "88px 70px 1fr 120px 110px 130px 64px", padding: "10px 14px", background: P.panel, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: P.mute, borderTopLeftRadius: 9, borderTopRightRadius: 9 }}>
+                    <span>Date</span><span>Photo</span><span>Detail</span><span>Type</span>
+                    <span style={{ textAlign: "right" }}>Change (g)</span>
+                    <span style={{ textAlign: "right" }}>Balance (g)</span>
+                    <span />
+                  </div>
+                  {rows.length === 0 && (
+                    <div style={{ padding: 24, textAlign: "center", color: P.mute, fontStyle: "italic" }}>No entries yet.</div>
+                  )}
+                  {rows.map((r, idx) => {
+                    const isBottomRow = idx >= rows.length - 2 && rows.length > 3;
+                    const m = TYPE_META[r.type];
+                    return (
+                      <div key={r._id} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "88px 70px 1fr 120px 110px 130px 64px", padding: "12px 14px", borderTop: `1px solid ${P.line}`, alignItems: "center" }}>
+                        <span style={{ color: P.mute, fontFamily: "Georgia, serif", fontSize: 13 }}>
+                          {new Date(r.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                        </span>
+                        
+                        {/* Photo Column */}
+                        <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center" }}>
+                          {r.photo ? (
+                            <button
+                              onClick={() => setLightboxPhoto(getPhotoUrl(r.photo))}
+                              style={{
+                                background: "none", border: "none", padding: 0, cursor: "pointer",
+                                width: 48, height: 48, position: "relative"
+                              }}
+                            >
+                              <img
+                                src={getPhotoUrl(r.photo)}
+                                alt="Item preview"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  e.currentTarget.nextSibling.style.display = 'flex';
+                                }}
+                                style={{
+                                  width: "100%", height: "100%", objectFit: "cover",
+                                  border: `1px solid ${P.gold}`, borderRadius: 6,
+                                  transition: "transform 0.15s ease-in-out"
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.08)"}
+                                onMouseLeave={(e) => e.currentTarget.style.transform = "none"}
+                              />
+                              <div
+                                style={{
+                                  display: "none", width: "100%", height: "100%",
+                                  background: P.ink, border: `1px solid ${P.line}`, borderRadius: 6,
+                                  alignItems: "center", justifyContent: "center", color: P.mute
+                                }}
+                                title="Image failed to load"
+                              >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                                  <circle cx="12" cy="13" r="4"></circle>
+                                </svg>
+                              </div>
+                            </button>
+                          ) : (
+                            <span style={{ color: P.mute, marginLeft: 16 }}>—</span>
+                          )}
+                        </div>
+
+                        <span style={{ fontFamily: "Georgia, serif", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                          <span style={{ color: P.paper, fontSize: 15, fontWeight: 600 }}>{r.details}</span>
+                          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{describe(r)}</div>
+                          <div style={{ fontSize: 10, color: "#737373", marginTop: 2 }}>{lastEditor(r)}</div>
+                        </span>
+                        <span style={{ color: m.color, fontFamily: "Georgia, serif", fontSize: 12 }}>{m.label}</span>
+                        <span style={{ textAlign: "right", fontFamily: "'SF Mono', Menlo, monospace", fontSize: 13, color: r.amountMg >= 0 ? P.gold : P.green }}>
+                          {r.amountMg >= 0 ? "+" : ""}{mgToG(r.amountMg)}
+                        </span>
+                        <span style={{ textAlign: "right", fontFamily: "'SF Mono', Menlo, monospace", fontSize: 13, color: r.runningBalanceMg < 0 ? P.red : P.paper }}>
+                          {r.runningBalanceMg < 0 ? "−" : ""}{mgToG(Math.abs(r.runningBalanceMg))}
+                        </span>
+                        <span style={{ textAlign: "right", position: "relative" }} className="action-menu-container">
+                          {(user?.role !== "operator" || isAdmin) && (
+                            <button
+                              className="ledger-row-action"
+                              onClick={() => setActiveActionMenu(activeActionMenu === r._id ? null : r._id)}
+                              style={{
+                                background: "none", border: "none", cursor: "pointer", padding: "4px 0",
+                                color: activeActionMenu === r._id ? P.gold : P.mute,
+                                display: "inline-flex", alignItems: "center", justifyContent: "center"
+                              }}
+                            >
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="1"></circle>
+                                <circle cx="12" cy="5" r="1"></circle>
+                                <circle cx="12" cy="19" r="1"></circle>
+                              </svg>
+                            </button>
+                          )}
+                          
+                          {activeActionMenu === r._id && (
+                            <div style={{
+                              position: "absolute", right: 0,
+                              ...(isBottomRow ? { bottom: "100%", marginBottom: 4 } : { top: "100%", marginTop: 4 }),
+                              zIndex: 50,
+                              background: P.panel, border: `1px solid ${P.line}`, borderRadius: 8,
+                              boxShadow: "0 4px 12px rgba(0,0,0,0.5)", padding: "6px 0",
+                              display: "flex", flexDirection: "column", minWidth: 120
+                            }}>
+                              {user?.role !== "operator" && (
+                                <button
+                                  className="dropdown-item"
+                                  onClick={() => { setEditTarget(r); setActiveActionMenu(null); }}
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
+                                    background: "transparent", border: "none", color: P.paper, cursor: "pointer",
+                                    fontFamily: "inherit", fontSize: 13, width: "100%", textAlign: "left"
+                                  }}
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 20h9"></path>
+                                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                                  </svg>
+                                  Edit
+                                </button>
+                              )}
+                              {isAdmin && (
+                                <button
+                                  className="dropdown-item-danger"
+                                  onClick={() => { handleVoidEntry(r._id); setActiveActionMenu(null); }}
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
+                                    background: "transparent", border: "none", color: P.red, cursor: "pointer",
+                                    fontFamily: "inherit", fontSize: 13, width: "100%", textAlign: "left"
+                                  }}
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                  </svg>
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div style={{ color: P.mute, fontStyle: "italic", marginTop: 80, textAlign: "center" }}>
+                Account not found.
               </div>
-            </>
-          ) : null
+            )
+          )
         )}
 
         {/* Users & Access */}
@@ -1071,7 +1361,7 @@ function EditModal({ entry, onSubmit, onClose }) {
   const editFileRef = useRef(null);
 
   const canHavePhoto = entry.type === "SALE" || entry.type === "RETURN";
-  const existingPhotoUrl = entry.photo && !photoRemoved && !newPhoto ? `${API_BASE}/uploads/${entry.photo}` : null;
+  const existingPhotoUrl = entry.photo && !photoRemoved && !newPhoto ? getPhotoUrl(entry.photo) : null;
 
   useEffect(() => {
     if (!newPhoto) { setPhotoPreview(null); return; }
@@ -1162,25 +1452,64 @@ function EditModal({ entry, onSubmit, onClose }) {
 
 // ── PhotoLightbox ────────────────────────────────────────────────────────────
 function PhotoLightbox({ src, onClose }) {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div onClick={onClose}
       style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 200, animation: "fadeIn .2s ease",
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.7)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 200,
+        animation: "fadeIn .25s ease-out",
       }}>
       <style>{`@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
       <button onClick={onClose}
         style={{
-          position: "absolute", top: 18, right: 22, background: "none",
-          border: "none", color: P.paper, fontSize: 28, cursor: "pointer",
-          opacity: 0.8, lineHeight: 1,
-        }}>×</button>
-      <img src={src} alt="Entry photo" onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: "90vw", maxHeight: "80vh", borderRadius: 10,
-          boxShadow: "0 8px 40px rgba(0,0,0,0.6)", objectFit: "contain",
-        }} />
+          position: "absolute", top: 24, right: 24, background: "none",
+          border: "none", color: "#f3efe6", cursor: "pointer",
+          opacity: 0.8, padding: 8, display: "flex", alignItems: "center", justifyContent: "center"
+        }}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+
+      {hasError ? (
+        <div onClick={(e) => e.stopPropagation()} style={{
+          background: "#1a1712", border: "1px solid #363127", borderRadius: 12,
+          padding: 40, display: "flex", flexDirection: "column", alignItems: "center",
+          gap: 16, color: "#9ca3af"
+        }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+            <line x1="4" y1="4" x2="20" y2="20"></line>
+          </svg>
+          <div style={{ fontSize: 16, fontFamily: "Georgia, serif", color: "#f3efe6" }}>Image Failed to Load</div>
+          <div style={{ fontSize: 13 }}>The requested photo could not be retrieved.</div>
+        </div>
+      ) : (
+        <img src={src} alt="Entry photo" onClick={(e) => e.stopPropagation()} onError={() => setHasError(true)}
+          style={{
+            maxWidth: "90vw", maxHeight: "80vh", borderRadius: 10,
+            boxShadow: "0 8px 40px rgba(0,0,0,0.6)", objectFit: "contain",
+          }} />
+      )}
     </div>
   );
 }

@@ -64,13 +64,14 @@ router.patch("/:id", requireRole("admin", "staff"), upload.single("photo"), asyn
     }
 
     if (req.file) {
-      entry.photo = req.file.filename;
+      entry.photo = `/uploads/${req.file.filename}`;
       photoChanged = true;
     }
 
     if (photoChanged && oldPhoto) {
       try {
-        fs.unlinkSync(path.join(UPLOADS_DIR, oldPhoto));
+        const oldFilename = oldPhoto.startsWith('/uploads/') ? oldPhoto.replace('/uploads/', '') : oldPhoto;
+        fs.unlinkSync(path.join(UPLOADS_DIR, oldFilename));
       } catch (err) {
         console.error("Failed to delete old photo file:", err);
       }

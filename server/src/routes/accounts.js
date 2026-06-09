@@ -182,7 +182,7 @@ router.post("/:id/entries", upload.single("photo"), async (req, res) => {
       return res.status(400).json({ error: "cashCents and pricePerGramCents are required for CASH_PAYMENT" });
     }
 
-    const photo = req.file ? req.file.filename : undefined;
+    const photo = req.file ? `/uploads/${req.file.filename}` : undefined;
 
     res.status(201).json(
       await Entry.create({

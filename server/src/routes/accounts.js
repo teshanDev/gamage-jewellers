@@ -1,8 +1,11 @@
 import { Router } from "express";
 import Account from "../models/Account.js";
+import fs from "fs";
 import Entry from "../models/Entry.js";
 import { computeBalance, buildRunningLedger, entryAmountMg } from "../lib/balance.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
+import upload from "../middleware/upload.js";
+
 
 const router = Router();
 router.use(requireAuth);
@@ -130,30 +133,73 @@ router.patch("/:id/unarchive", requireAdmin, async (req, res) => {
   }
 });
 
-router.post("/:id/entries", async (req, res) => {
+router.post("/:id/entries", upload.single("photo"), async (req, res) => {
   try {
     const account = await Account.findById(req.params.id);
-    if (!account) return res.status(404).json({ error: "Account not found" });
-    if (account.archived) return res.status(400).json({ error: "Cannot add entries to an archived account" });
+    if (!account) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(404).json({ error: "Account not found" });
+    }
+    if (account.archived) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: "Cannot add entries to an archived account" });
+    }
 
     const { date, type, details, weightMg, ratePct, cashCents, pricePerGramCents } = req.body;
 
-    if (!date || !type || !details) return res.status(400).json({ error: "date, type, and details are required" });
+    if (!date || !type || !details) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: "date, type, and details are required" });
+    }
 
     const VALID = ["SALE", "RETURN", "GOLD_PAYMENT", "CASH_PAYMENT"];
-    if (!VALID.includes(type)) return res.status(400).json({ error: `type must be one of: ${VALID.join(", ")}` });
+    if (!VALID.includes(type)) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: `type must be one of: ${VALID.join(", ")}` });
+    }
 
-    if ((type === "SALE" || type === "RETURN") && (!weightMg || !ratePct))
+    const parseNum = (val) => {
+      if (val === undefined || val === null || val === "") return undefined;
+      const n = Number(val);
+      return isNaN(n) ? undefined : n;
+    };
+
+    const parsedWeightMg = parseNum(weightMg);
+    const parsedRatePct = parseNum(ratePct);
+    const parsedCashCents = parseNum(cashCents);
+    const parsedPricePerGramCents = parseNum(pricePerGramCents);
+
+    if ((type === "SALE" || type === "RETURN") && (parsedWeightMg === undefined || parsedRatePct === undefined)) {
+      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(400).json({ error: "weightMg and ratePct are required for SALE/RETURN" });
-    if (type === "GOLD_PAYMENT" && !weightMg)
+    }
+    if (type === "GOLD_PAYMENT" && parsedWeightMg === undefined) {
+      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(400).json({ error: "weightMg is required for GOLD_PAYMENT" });
-    if (type === "CASH_PAYMENT" && (!cashCents || !pricePerGramCents))
+    }
+    if (type === "CASH_PAYMENT" && (parsedCashCents === undefined || parsedPricePerGramCents === undefined)) {
+      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(400).json({ error: "cashCents and pricePerGramCents are required for CASH_PAYMENT" });
+    }
+
+    const photo = req.file ? req.file.filename : undefined;
 
     res.status(201).json(
-      await Entry.create({ accountId: req.params.id, date, type, details, weightMg, ratePct, cashCents, pricePerGramCents, createdBy: req.user.sub })
+      await Entry.create({
+        accountId: req.params.id,
+        date,
+        type,
+        details,
+        weightMg: parsedWeightMg,
+        ratePct: parsedRatePct,
+        cashCents: parsedCashCents,
+        pricePerGramCents: parsedPricePerGramCents,
+        photo,
+        createdBy: req.user.sub
+      })
     );
   } catch (err) {
+    if (req.file) fs.unlink(req.file.path, () => {});
     res.status(500).json({ error: err.message });
   }
 });

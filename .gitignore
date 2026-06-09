@@ -20,3 +20,8 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# ── Uploads ─────────────────────────────────────────────────────────────────
+server/uploads/*
+!server/uploads/.gitkeep
+

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import HorseMark from "./HorseMark.jsx";
 import {
   AreaChart, Area, BarChart, Bar,
@@ -106,6 +106,7 @@ export default function GoldLedger({ token, user, onLogout }) {
   const [showNewAcct,      setShowNewAcct]      = useState(false);
   const [editTarget,       setEditTarget]       = useState(null);
   const [search,           setSearch]           = useState("");
+  const [lightboxPhoto,    setLightboxPhoto]    = useState(null);
 
   const api = useMemo(() => {
     const apiFetch = async (path, opts = {}) => {
@@ -122,6 +123,20 @@ export default function GoldLedger({ token, user, onLogout }) {
       if (!res.ok) throw new Error(data.error || "Request failed");
       return data;
     };
+    const apiMultipart = async (path, method, fields, photo) => {
+      const fd = new FormData();
+      Object.entries(fields).forEach(([k, v]) => { if (v != null) fd.append(k, String(v)); });
+      if (photo) fd.append("photo", photo);
+      const res = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (res.status === 401) { onLogout(); throw new Error("Session expired"); }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      return data;
+    };
     return {
       getAccounts:         ()         => apiFetch("/accounts"),
       getArchivedAccounts: ()         => apiFetch("/accounts/archived"),
@@ -130,8 +145,8 @@ export default function GoldLedger({ token, user, onLogout }) {
       getAccount:          (id)       => apiFetch(`/accounts/${id}`),
       archiveAccount:      (id)       => apiFetch(`/accounts/${id}/archive`,  { method: "PATCH" }),
       unarchiveAccount:    (id)       => apiFetch(`/accounts/${id}/unarchive`,{ method: "PATCH" }),
-      createEntry:         (aid, d)   => apiFetch(`/accounts/${aid}/entries`, { method: "POST",  body: d }),
-      updateEntry:         (id, d)    => apiFetch(`/entries/${id}`,           { method: "PATCH", body: d }),
+      createEntry:         (aid, d)   => { const { photo, ...fields } = d; return apiMultipart(`/accounts/${aid}/entries`, "POST", fields, photo); },
+      updateEntry:         (id, d)    => { const { photo, removePhoto, ...fields } = d; if (removePhoto) fields.removePhoto = "true"; return apiMultipart(`/entries/${id}`, "PATCH", fields, photo); },
       voidEntry:           (id)       => apiFetch(`/entries/${id}/void`,      { method: "PATCH" }),
       getUsers:            ()         => apiFetch("/users"),
       createUser:          (d)        => apiFetch("/auth/register",           { method: "POST",  body: d }),
@@ -468,6 +483,10 @@ export default function GoldLedger({ token, user, onLogout }) {
                       </span>
                       <span style={{ fontFamily: "Georgia, serif", fontSize: 14 }}>
                         <span style={{ color: m.color }}>● </span>{r.details}
+                        {r.photo && (
+                          <button onClick={() => setLightboxPhoto(`${API_BASE}/uploads/${r.photo}`)}
+                            title="View photo" style={{ background: "none", border: "none", cursor: "pointer", padding: "0 4px", fontSize: 13, verticalAlign: "middle", opacity: 0.7 }}>📷</button>
+                        )}
                         <div style={{ fontSize: 11, color: P.mute, marginTop: 2 }}>{describe(r)}</div>
                         <div style={{ fontSize: 10, color: "#5a5248", marginTop: 2 }}>{lastEditor(r)}</div>
                       </span>
@@ -506,6 +525,9 @@ export default function GoldLedger({ token, user, onLogout }) {
 
       {editTarget && (
         <EditModal entry={editTarget} onSubmit={(d) => handleEditEntry(editTarget._id, d)} onClose={() => setEditTarget(null)} />
+      )}
+      {lightboxPhoto && (
+        <PhotoLightbox src={lightboxPhoto} onClose={() => setLightboxPhoto(null)} />
       )}
     </div>
   );
@@ -744,9 +766,25 @@ function EntryForm({ onSubmit, onCancel }) {
   const [details, setDetails] = useState("");
   const [f,       setF]       = useState({ weight: "", rate: "103", cash: "", price: "" });
   const [errors,  setErrors]  = useState({});
+  const [photo,        setPhoto]        = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const fileInputRef = useRef(null);
 
   const needsWeight = type === "SALE" || type === "RETURN" || type === "GOLD_PAYMENT";
   const needsRate   = type === "SALE" || type === "RETURN";
+  const needsPhoto  = type === "SALE" || type === "RETURN";
+
+  useEffect(() => {
+    if (!photo) { setPhotoPreview(null); return; }
+    const url = URL.createObjectURL(photo);
+    setPhotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo]);
+
+  // Clear photo when switching away from SALE/RETURN
+  useEffect(() => {
+    if (!needsPhoto) { setPhoto(null); if (fileInputRef.current) fileInputRef.current.value = ""; }
+  }, [needsPhoto]);
 
   const submit = () => {
     const errs = validateEntry(type, date, details, f);
@@ -759,7 +797,10 @@ function EntryForm({ onSubmit, onCancel }) {
       base.cashCents         = Math.round(parseFloat(f.cash)  * 100);
       base.pricePerGramCents = Math.round(parseFloat(f.price) * 100);
     }
+    if (photo) base.photo = photo;
     onSubmit(base);
+    setPhoto(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const field = (label, key, placeholder, extraProps = {}) => (
@@ -797,6 +838,26 @@ function EntryForm({ onSubmit, onCancel }) {
         {type === "CASH_PAYMENT" && field("Cash (Rs)", "cash", "45000.00")}
         {type === "CASH_PAYMENT" && field("24kt price / g (Rs)", "price", "36800.00")}
       </div>
+      {needsPhoto && (
+        <div style={{ marginTop: 12 }}>
+          <label style={LAB}>Photo</label>
+          <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }}
+            onChange={(e) => { if (e.target.files?.[0]) setPhoto(e.target.files[0]); }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button type="button" onClick={() => fileInputRef.current?.click()}
+              style={{ padding: "6px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
+              📷 {photo ? "Change photo" : "Attach photo"}
+            </button>
+            {photoPreview && (
+              <div style={{ position: "relative", display: "inline-block" }}>
+                <img src={photoPreview} alt="Preview" style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 6, border: `1px solid ${P.line}` }} />
+                <button type="button" onClick={() => { setPhoto(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                  style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: P.red, color: P.ink, border: "none", cursor: "pointer", fontSize: 11, lineHeight: "18px", textAlign: "center", padding: 0 }}>×</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
         <button onClick={submit} style={{ padding: "9px 18px", background: P.gold, color: P.ink, border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>Add to ledger</button>
         <button onClick={onCancel} style={{ padding: "9px 18px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>Cancel</button>
@@ -1004,6 +1065,20 @@ function EditModal({ entry, onSubmit, onClose }) {
   const [ratePct, setRatePct] = useState(entry.ratePct           != null ? String(entry.ratePct)                  : "");
   const [cashRs,  setCashRs]  = useState(entry.cashCents         != null ? String(entry.cashCents / 100)          : "");
   const [priceRs, setPriceRs] = useState(entry.pricePerGramCents != null ? String(entry.pricePerGramCents / 100)  : "");
+  const [newPhoto,     setNewPhoto]     = useState(null);
+  const [photoRemoved, setPhotoRemoved] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const editFileRef = useRef(null);
+
+  const canHavePhoto = entry.type === "SALE" || entry.type === "RETURN";
+  const existingPhotoUrl = entry.photo && !photoRemoved && !newPhoto ? `${API_BASE}/uploads/${entry.photo}` : null;
+
+  useEffect(() => {
+    if (!newPhoto) { setPhotoPreview(null); return; }
+    const url = URL.createObjectURL(newPhoto);
+    setPhotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [newPhoto]);
 
   const i = inp({ background: P.panel });
 
@@ -1017,6 +1092,8 @@ function EditModal({ entry, onSubmit, onClose }) {
       data.cashCents         = Math.round(parseFloat(cashRs)  * 100);
       data.pricePerGramCents = Math.round(parseFloat(priceRs) * 100);
     }
+    if (newPhoto) data.photo = newPhoto;
+    else if (photoRemoved) data.removePhoto = true;
     onSubmit(data);
   };
 
@@ -1045,12 +1122,65 @@ function EditModal({ entry, onSubmit, onClose }) {
               <div><label style={LAB}>24kt price / g (Rs)</label><input value={priceRs} onChange={(e) => setPriceRs(e.target.value)} style={i} /></div>
             </div>
           )}
+          {canHavePhoto && (
+            <div>
+              <label style={LAB}>Photo</label>
+              <input ref={editFileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }}
+                onChange={(e) => { if (e.target.files?.[0]) { setNewPhoto(e.target.files[0]); setPhotoRemoved(false); } }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button type="button" onClick={() => editFileRef.current?.click()}
+                  style={{ padding: "6px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
+                  📷 {existingPhotoUrl || photoPreview ? "Replace photo" : "Attach photo"}
+                </button>
+                {existingPhotoUrl && (
+                  <div style={{ position: "relative", display: "inline-block" }}>
+                    <img src={existingPhotoUrl} alt="Existing" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${P.line}` }} />
+                    <button type="button" onClick={() => { setPhotoRemoved(true); setNewPhoto(null); if (editFileRef.current) editFileRef.current.value = ""; }}
+                      style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: P.red, color: P.ink, border: "none", cursor: "pointer", fontSize: 11, lineHeight: "18px", textAlign: "center", padding: 0 }}>×</button>
+                  </div>
+                )}
+                {photoPreview && (
+                  <div style={{ position: "relative", display: "inline-block" }}>
+                    <img src={photoPreview} alt="New" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${P.gold}` }} />
+                    <button type="button" onClick={() => { setNewPhoto(null); if (editFileRef.current) editFileRef.current.value = ""; }}
+                      style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: P.red, color: P.ink, border: "none", cursor: "pointer", fontSize: 11, lineHeight: "18px", textAlign: "center", padding: 0 }}>×</button>
+                  </div>
+                )}
+                {photoRemoved && !newPhoto && <span style={{ fontSize: 11, color: P.red, fontStyle: "italic" }}>Photo will be removed</span>}
+              </div>
+            </div>
+          )}
         </div>
         <div style={{ marginTop: 18, display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onClose}  style={{ padding: "9px 16px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>Cancel</button>
           <button onClick={submit}   style={{ padding: "9px 18px", background: P.gold, color: P.ink, border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>Save changes</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── PhotoLightbox ────────────────────────────────────────────────────────────
+function PhotoLightbox({ src, onClose }) {
+  return (
+    <div onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 200, animation: "fadeIn .2s ease",
+      }}>
+      <style>{`@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
+      <button onClick={onClose}
+        style={{
+          position: "absolute", top: 18, right: 22, background: "none",
+          border: "none", color: P.paper, fontSize: 28, cursor: "pointer",
+          opacity: 0.8, lineHeight: 1,
+        }}>×</button>
+      <img src={src} alt="Entry photo" onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: "90vw", maxHeight: "80vh", borderRadius: 10,
+          boxShadow: "0 8px 40px rgba(0,0,0,0.6)", objectFit: "contain",
+        }} />
     </div>
   );
 }

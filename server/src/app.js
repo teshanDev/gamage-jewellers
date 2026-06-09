@@ -1,10 +1,16 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+
 import healthRouter from "./routes/health.js";
 import authRouter from "./routes/auth.js";
 import accountsRouter from "./routes/accounts.js";
 import entriesRouter from "./routes/entries.js";
 import usersRouter from "./routes/users.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -18,6 +24,7 @@ app.use(cors({
   },
 }));
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.use("/health", healthRouter);
 app.use("/auth", authRouter);

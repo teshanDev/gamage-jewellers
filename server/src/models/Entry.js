@@ -15,6 +15,7 @@ const entrySchema = new mongoose.Schema(
     ratePct: Number,            // SALE, RETURN
     cashCents: Number,          // CASH_PAYMENT
     pricePerGramCents: Number,  // CASH_PAYMENT
+    photo: String,              // Optional item photo filename
     status: { type: String, enum: ["active", "voided"], default: "active" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     history: [historySchema],

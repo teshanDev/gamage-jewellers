@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Menu, X } from "lucide-react";
 import HorseMark from "./HorseMark.jsx";
 import {
   AreaChart, Area, BarChart, Bar,
@@ -116,6 +117,24 @@ export default function GoldLedger({ token, user, onLogout }) {
   const [isCollapsed,      setIsCollapsed]      = useState(false);
   const [showProfileMenu,  setShowProfileMenu]  = useState(false);
   const [activeActionMenu, setActiveActionMenu] = useState(null);
+
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const w = window.innerWidth;
+      setIsMobile(w < 768);
+      setIsTablet(w >= 768 && w < 1024);
+      if (w >= 768) setShowMobileSidebar(false);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const effectiveCollapsed = isTablet ? true : (isMobile ? false : isCollapsed);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -255,7 +274,7 @@ export default function GoldLedger({ token, user, onLogout }) {
   const handleEditEntry = async (id, data) => {
     try {
       await api.updateEntry(id, data);
-      await Promise.all([loadAccounts(), loadLedger(activeId)]);
+      await Promise.all([loadAccounts(), loadLedger(activeId), loadStats()]);
       setEditTarget(null);
     } catch (e) { if (e.message !== "Session expired") setError(e.message); }
   };
@@ -329,14 +348,14 @@ export default function GoldLedger({ token, user, onLogout }) {
     const active = view === id;
     const IconComponent = NAV_ICONS[id];
     return (
-      <button onClick={() => navigate(id)}
-        className={`nav-item ${active ? "active" : ""} ${isCollapsed ? "collapsed" : ""}`}
+      <button onClick={() => { navigate(id); if (isMobile) setShowMobileSidebar(false); }}
+        className={`nav-item ${active ? "active" : ""} ${effectiveCollapsed ? "collapsed" : ""}`}
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: isCollapsed ? "center" : "flex-start",
+          justifyContent: effectiveCollapsed ? "center" : "flex-start",
           width: "100%",
-          padding: isCollapsed ? "11px 0" : "11px 14px",
+          padding: effectiveCollapsed ? "11px 0" : "11px 14px",
           background: active ? P.ink : "transparent",
           border: "none",
           borderRadius: 8,
@@ -353,13 +372,13 @@ export default function GoldLedger({ token, user, onLogout }) {
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          width: isCollapsed ? 24 : "auto",
+          width: effectiveCollapsed ? 24 : "auto",
           color: active ? P.gold : P.mute,
           transition: "color 0.2s ease-in-out"
         }}>
           {IconComponent ? <IconComponent /> : "•"}
         </span>
-        {!isCollapsed && (
+        {!effectiveCollapsed && (
           <span className="nav-label" style={{ marginLeft: 10, display: "inline-block" }}>
             {label}
           </span>
@@ -369,8 +388,30 @@ export default function GoldLedger({ token, user, onLogout }) {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", background: P.ink, color: P.paper, fontFamily: "Georgia, 'Times New Roman', serif", overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100vh", background: P.ink, color: P.paper, fontFamily: "Georgia, 'Times New Roman', serif", overflow: "hidden" }}>
       <style>{`
+        /* Responsive utilities */
+        .accounts-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, 1fr); }
+        .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+        .charts-grid.single-chart { grid-template-columns: 1fr; }
+        
+        @media (max-width: 1280px) and (min-width: 1024px) {
+          .accounts-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (max-width: 1023px) and (min-width: 768px) {
+          .accounts-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 767px) {
+          .accounts-grid { grid-template-columns: 1fr; }
+          .kpi-grid { grid-template-columns: 1fr; }
+          .charts-grid { grid-template-columns: 1fr; }
+          .client-info-block { flex-direction: column !important; gap: 16px !important; }
+          .client-info-block > div:last-child { text-align: left !important; }
+          .ledger-toolbar { flex-wrap: wrap; }
+          .ledger-toolbar button { flex: 1; }
+        }
+
         .nav-item {
           transition: all 0.2s ease-in-out;
         }
@@ -425,36 +466,66 @@ export default function GoldLedger({ token, user, onLogout }) {
         }
       `}</style>
 
+      {/* ── mobile header ── */}
+      {isMobile && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: P.panel, borderBottom: `1px solid ${P.line}`, position: "sticky", top: 0, zIndex: 900 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, color: P.gold }}>
+            <HorseMark width={22} />
+            <span style={{ fontSize: 12, letterSpacing: 2, textTransform: "uppercase", fontWeight: "bold" }}>Gamage Jewellers</span>
+          </div>
+          <button onClick={() => setShowMobileSidebar(true)} style={{ background: "none", border: "none", color: P.paper, cursor: "pointer", display: "flex", alignItems: "center" }}>
+            <Menu size={24} />
+          </button>
+        </div>
+      )}
+
+      {/* ── mobile overlay ── */}
+      {isMobile && showMobileSidebar && (
+        <div onClick={() => setShowMobileSidebar(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 999 }} />
+      )}
+
       {/* ── persistent nav ── */}
       <nav style={{
-        width: isCollapsed ? 76 : 190,
+        width: effectiveCollapsed ? 76 : 190,
         background: P.panel,
         borderRight: `1px solid ${P.line}`,
         display: "flex",
         flexDirection: "column",
         flexShrink: 0,
-        transition: "width 0.3s ease-in-out",
-        position: "relative",
-        overflow: isCollapsed ? "visible" : "hidden"
+        transition: "width 0.3s ease-in-out, transform 0.3s ease-in-out",
+        position: isMobile ? "fixed" : "relative",
+        top: isMobile ? 0 : "auto",
+        left: isMobile ? 0 : "auto",
+        height: isMobile ? "100vh" : "auto",
+        transform: isMobile ? (showMobileSidebar ? "translateX(0)" : "translateX(-100%)") : "none",
+        zIndex: isMobile ? 1000 : 1,
+        overflow: effectiveCollapsed ? "visible" : "hidden"
       }}>
-        <div onClick={() => { setIsCollapsed(!isCollapsed); setShowProfileMenu(false); }}
+        <div onClick={() => { if(!isMobile && !isTablet) setIsCollapsed(!isCollapsed); setShowProfileMenu(false); }}
           className="brand-header"
           style={{
             padding: "18px 16px 14px",
             display: "flex",
             alignItems: "center",
-            justifyContent: isCollapsed ? "center" : "flex-start",
+            justifyContent: effectiveCollapsed ? "center" : "space-between",
             gap: 10,
             color: P.gold,
-            cursor: "pointer",
+            cursor: (!isMobile && !isTablet) ? "pointer" : "default",
             userSelect: "none",
             transition: "all 0.2s ease-in-out"
           }}>
-          <HorseMark width={22} style={{ flexShrink: 0 }} />
-          {!isCollapsed && (
-            <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", fontWeight: "bold" }}>
-              Gamage Jewellers
-            </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <HorseMark width={22} style={{ flexShrink: 0 }} />
+            {!effectiveCollapsed && (
+              <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", fontWeight: "bold" }}>
+                Gamage Jewellers
+              </span>
+            )}
+          </div>
+          {isMobile && !effectiveCollapsed && (
+            <button onClick={() => setShowMobileSidebar(false)} style={{ background: "none", border: "none", color: P.mute, cursor: "pointer", display: "flex", alignItems: "center" }}>
+              <X size={20} />
+            </button>
           )}
         </div>
 
@@ -465,7 +536,7 @@ export default function GoldLedger({ token, user, onLogout }) {
           <NavItem id="profile" label="My Profile" />
         </div>
 
-        {!isCollapsed ? (
+        {!effectiveCollapsed ? (
           <div style={{ padding: "16px 18px", borderTop: `1px solid ${P.line}`, overflow: "hidden" }}>
             <div style={{ fontSize: 12, color: P.paper, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.name}</div>
             <div style={{ fontSize: 10, color: P.mute, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.role}</div>
@@ -534,12 +605,12 @@ export default function GoldLedger({ token, user, onLogout }) {
           !activeId ? (
             // View A: Accounts Directory
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 12, justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center" }}>
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search accounts…"
-                  style={{ ...inp(), width: 320, fontSize: 14 }}
+                  style={{ ...inp(), width: isMobile ? "100%" : 320, fontSize: 14 }}
                 />
                 <button onClick={() => setShowNewAcct(true)}
                   style={{ padding: "10px 18px", background: P.gold, color: P.ink, border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: "bold" }}>
@@ -561,7 +632,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                   {q ? "No accounts match your search." : "No accounts found. Create one above."}
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+                <div className="accounts-grid">
                   {filteredAccounts.map((a) => {
                     const bal = a.balanceMg ?? 0;
                     return (
@@ -597,7 +668,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                   <span>←</span> Back to Accounts
                 </button>
                 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 26 }}>
+                <div className="client-info-block" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 26 }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <div style={{ color: P.paper, fontSize: 28, lineHeight: 1.1, fontFamily: "inherit", fontWeight: "bold" }}>
@@ -620,7 +691,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                 </div>
 
                 {/* toolbar */}
-                <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
+                <div className="ledger-toolbar" style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
                   {!activeAccount.archived && (
                     <button onClick={() => setShowAddEntry((s) => !s)}
                       style={{ padding: "9px 16px", background: showAddEntry ? "transparent" : P.gold, color: showAddEntry ? P.gold : P.ink, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
@@ -650,7 +721,8 @@ export default function GoldLedger({ token, user, onLogout }) {
                 {showAddEntry && <EntryForm onSubmit={handleAddEntry} onCancel={() => setShowAddEntry(false)} />}
 
                 {/* ledger table */}
-                <div style={{ border: `1px solid ${P.line}`, borderRadius: 10, overflow: "visible" }}>
+                <div style={{ width: "100%", overflowX: "auto", paddingBottom: 64 }}>
+                <div style={{ border: `1px solid ${P.line}`, borderRadius: 10, overflow: "visible", minWidth: 800 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "88px 70px 1fr 120px 110px 130px 64px", padding: "10px 14px", background: P.panel, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: P.mute, borderTopLeftRadius: 9, borderTopRightRadius: 9 }}>
                     <span>Date</span><span>Photo</span><span>Detail</span><span>Type</span>
                     <span style={{ textAlign: "right" }}>Change (g)</span>
@@ -794,6 +866,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                     );
                   })}
                 </div>
+                </div>
               </>
             ) : (
               <div style={{ color: P.mute, fontStyle: "italic", marginTop: 80, textAlign: "center" }}>
@@ -901,7 +974,7 @@ function OverviewPanel({ accounts, onSelect, stats }) {
       ) : (
         <>
           {/* stat cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
+          <div className="kpi-grid">
             {statCard("Total owed",   owed,             P.gold)}
             {statCard("Total credit", Math.abs(credit), "#8fa9c0")}
             {statCard("Net balance",  net,              net >= 0 ? P.gold : P.red)}
@@ -924,7 +997,7 @@ function OverviewPanel({ accounts, onSelect, stats }) {
           </div>
 
           {/* charts */}
-          <div style={{ display: "grid", gridTemplateColumns: topAccounts.length > 0 ? "1fr 1fr" : "1fr", gap: 20, marginBottom: 28 }}>
+          <div className={`charts-grid ${topAccounts.length === 0 ? "single-chart" : ""}`}>
 
             {/* top accounts by balance */}
             {topAccounts.length > 0 && (

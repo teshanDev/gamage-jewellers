@@ -41,7 +41,10 @@ router.get("/stats", async (_req, res) => {
     const entries = await Entry.find({ status: "active" }).lean();
     const monthly = {};
     for (const e of entries) {
-      const key = new Date(e.date).toISOString().slice(0, 7); // "YYYY-MM"
+      const d = new Date(e.date);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const key = `${year}-${month}`;
       if (!monthly[key]) monthly[key] = { salesMg: 0, settlementsMg: 0, marginMg: 0 };
       const amt = entryAmountMg(e); // integer mg, matches ledger
       if (e.type === "SALE") {

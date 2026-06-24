@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Menu, X } from "lucide-react";
 import HorseMark from "./HorseMark.jsx";
+import { formatGoldWeight } from "./goldRounding.js";
 import {
   AreaChart, Area, BarChart, Bar,
   LineChart, Line,
@@ -17,8 +18,7 @@ const getPhotoUrl = (photo) => {
 };
 
 // ── display helpers ──────────────────────────────────────────────────────────
-const mgToG = (mg) =>
-  (mg / 1000).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const mgToG = (mg) => formatGoldWeight(mg / 1000, true);
 const centsToRs = (c) =>
   "Rs " + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -43,13 +43,13 @@ function describe(r) {
 
 function downloadCSV(account, rows) {
   const header = ["Date","Type","Details","Weight (g)","Rate (%)","Cash (Rs)","Price (Rs/g)","Change (g 24kt)","Balance (g 24kt)"];
-  const fmtMg = (mg) => mg != null ? (mg / 1000).toFixed(3) : "";
+  const fmtMg = (mg) => mg != null ? formatGoldWeight(mg / 1000, false) : "";
   const fmtC  = (c)  => c  != null ? (c  / 100).toFixed(2)  : "";
   const q     = (s)  => `"${String(s ?? "").replace(/"/g, '""')}"`;
   const lines = rows.map((r) => [
     new Date(r.date).toLocaleDateString("en-GB"), r.type, q(r.details),
     fmtMg(r.weightMg), r.ratePct ?? "", fmtC(r.cashCents), fmtC(r.pricePerGramCents),
-    (r.amountMg / 1000).toFixed(3), (r.runningBalanceMg / 1000).toFixed(3),
+    formatGoldWeight(r.amountMg / 1000, false), formatGoldWeight(r.runningBalanceMg / 1000, false),
   ].join(","));
   const csv  = [header.join(","), ...lines].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -904,7 +904,7 @@ function ChartTooltip({ active, payload, label, unit = "g" }) {
       <div style={{ color: P.mute, marginBottom: 6 }}>{label}</div>
       {payload.map((p) => (
         <div key={p.dataKey} style={{ color: p.color, marginTop: 2 }}>
-          {p.name}: {Number(p.value).toFixed(3)} {unit}
+          {p.name}: {formatGoldWeight(p.value, false)} {unit}
         </div>
       ))}
     </div>

@@ -1,17 +1,28 @@
+import { formatGoldWeight } from "./goldRounding.js";
+
 export function entryAmountMg(entry) {
+  let raw = 0;
   switch (entry.type) {
     case "SALE":
-      return Math.round(entry.weightMg * entry.ratePct / 100);
+      raw = entry.weightMg * entry.ratePct / 100;
+      break;
     case "RETURN":
       // always 22kt — rate% converts to 24kt equivalent, same formula as SALE
-      return -Math.round(entry.weightMg * entry.ratePct / 100);
+      raw = -(entry.weightMg * entry.ratePct / 100);
+      break;
     case "GOLD_PAYMENT":
-      return -entry.weightMg;
+      raw = -entry.weightMg;
+      break;
     case "CASH_PAYMENT":
-      return -Math.round(entry.cashCents * 1000 / entry.pricePerGramCents);
+      raw = -(entry.cashCents * 1000 / entry.pricePerGramCents);
+      break;
     default:
       return 0;
   }
+  
+  if (raw === 0) return 0;
+  const formatted = formatGoldWeight(raw / 1000);
+  return Math.round(parseFloat(formatted) * 1000);
 }
 
 export function computeBalance(entries) {

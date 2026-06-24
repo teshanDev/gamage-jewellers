@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Camera } from "lucide-react";
 import HorseMark from "./HorseMark.jsx";
 import { formatGoldWeight } from "./goldRounding.js";
 import {
@@ -1208,8 +1208,9 @@ function EntryForm({ onSubmit, onCancel }) {
             onChange={(e) => { if (e.target.files?.[0]) setPhoto(e.target.files[0]); }} />
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button type="button" onClick={() => fileInputRef.current?.click()}
-              style={{ padding: "6px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
-              📷 {photo ? "Change photo" : "Attach photo"}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
+              <Camera size={16} />
+              {photo ? "Change photo" : "Attach photo"}
             </button>
             {photoPreview && (
               <div style={{ position: "relative", display: "inline-block" }}>
@@ -1492,8 +1493,9 @@ function EditModal({ entry, onSubmit, onClose }) {
                 onChange={(e) => { if (e.target.files?.[0]) { setNewPhoto(e.target.files[0]); setPhotoRemoved(false); } }} />
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <button type="button" onClick={() => editFileRef.current?.click()}
-                  style={{ padding: "6px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
-                  📷 {existingPhotoUrl || photoPreview ? "Replace photo" : "Attach photo"}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
+                  <Camera size={16} />
+                  {existingPhotoUrl || photoPreview ? "Replace photo" : "Attach photo"}
                 </button>
                 {existingPhotoUrl && (
                   <div style={{ position: "relative", display: "inline-block" }}>

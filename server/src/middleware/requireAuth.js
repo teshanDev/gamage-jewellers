@@ -7,7 +7,17 @@ export function requireAuth(req, res, next) {
     req.user = jwt.verify(header.slice(7), process.env.JWT_SECRET);
     next();
   } catch {
-    res.status(401).json({ error: "Invalid or expired token" });
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+
+  if (req.user.role === "staff" || req.user.role === "tour_officer") {
+    const hourString = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Colombo", hour: "numeric", hour12: false }).format(new Date());
+    let hour = parseInt(hourString, 10);
+    if (hour === 24) hour = 0;
+
+    if (hour >= 20 || hour < 7) {
+      return res.status(403).json({ error: "outside_operating_hours", message: "System access is restricted to 7:00 AM - 8:00 PM." });
+    }
   }
 }
 

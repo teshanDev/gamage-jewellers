@@ -207,4 +207,19 @@ router.post("/:id/entries", upload.single("photo"), async (req, res) => {
   }
 });
 
+router.delete("/:id", requireAdmin, async (req, res) => {
+  try {
+    const account = await Account.findById(req.params.id);
+    if (!account) return res.status(404).json({ error: "Account not found" });
+    if (!account.archived) return res.status(400).json({ error: "Account must be archived before it can be permanently deleted" });
+
+    await Entry.deleteMany({ accountId: account._id });
+    await Account.findByIdAndDelete(account._id);
+
+    res.json({ message: "Account deleted" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

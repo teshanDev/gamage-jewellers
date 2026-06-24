@@ -8,6 +8,8 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem("gl_user")); } catch { return null; }
   });
 
+  const [logoutReason, setLogoutReason] = useState(null);
+
   const handleLogin = useCallback((token, user) => {
     localStorage.setItem("gl_token", token);
     localStorage.setItem("gl_user", JSON.stringify(user));
@@ -15,13 +17,14 @@ export default function App() {
     setUser(user);
   }, []);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback((reason = null) => {
     localStorage.removeItem("gl_token");
     localStorage.removeItem("gl_user");
     setToken(null);
     setUser(null);
+    if (reason) setLogoutReason(reason);
   }, []);
 
-  if (!token) return <Login onLogin={handleLogin} />;
+  if (!token) return <Login onLogin={handleLogin} initialError={logoutReason === "outside_operating_hours" ? "Access Denied: The system is currently closed. Operating hours for your role are 7:00 AM to 8:00 PM." : null} />;
   return <GoldLedger token={token} user={user} onLogout={handleLogout} />;
 }

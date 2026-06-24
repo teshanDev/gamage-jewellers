@@ -16,8 +16,8 @@ router.get("/", async (_req, res) => {
 router.patch("/:id/role", async (req, res) => {
   try {
     const { role } = req.body;
-    if (!["admin", "staff", "operator"].includes(role))
-      return res.status(400).json({ error: "role must be admin, staff, or operator" });
+    if (!["admin", "staff", "tour_officer"].includes(role))
+      return res.status(400).json({ error: "role must be admin, staff, or tour_officer" });
     if (req.params.id === req.user.sub)
       return res.status(400).json({ error: "Cannot change your own role" });
 
@@ -55,6 +55,22 @@ router.patch("/:id/reactivate", async (req, res) => {
     user.active = true;
     await user.save();
     res.json(user.toObject({ transform: (_, o) => { delete o.passwordHash; return o; } }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  try {
+    if (req.params.id === req.user.sub) {
+      return res.status(403).json({ error: "Cannot delete your own account" });
+    }
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    if (user.active !== false) return res.status(400).json({ error: "User must be deactivated before deletion" });
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: "User permanently deleted" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Menu, X, Camera } from "lucide-react";
+import { Menu, X, Camera, Trash2 } from "lucide-react";
 import HorseMark from "./HorseMark.jsx";
 import { formatGoldWeight } from "./goldRounding.js";
 import {
@@ -163,6 +163,10 @@ export default function GoldLedger({ token, user, onLogout }) {
       });
       if (res.status === 401) { onLogout(); throw new Error("Session expired"); }
       const data = await res.json();
+      if (res.status === 403 && data.error === "outside_operating_hours") {
+        onLogout("outside_operating_hours");
+        throw new Error(data.message || "Access Denied: The system is currently closed. Operating hours for your role are 7:00 AM to 8:00 PM.");
+      }
       if (!res.ok) throw new Error(data.error || "Request failed");
       return data;
     };
@@ -177,6 +181,10 @@ export default function GoldLedger({ token, user, onLogout }) {
       });
       if (res.status === 401) { onLogout(); throw new Error("Session expired"); }
       const data = await res.json();
+      if (res.status === 403 && data.error === "outside_operating_hours") {
+        onLogout("outside_operating_hours");
+        throw new Error(data.message || "Access Denied: The system is currently closed. Operating hours for your role are 7:00 AM to 8:00 PM.");
+      }
       if (!res.ok) throw new Error(data.error || "Request failed");
       return data;
     };
@@ -188,6 +196,7 @@ export default function GoldLedger({ token, user, onLogout }) {
       getAccount:          (id)       => apiFetch(`/accounts/${id}`),
       archiveAccount:      (id)       => apiFetch(`/accounts/${id}/archive`,  { method: "PATCH" }),
       unarchiveAccount:    (id)       => apiFetch(`/accounts/${id}/unarchive`,{ method: "PATCH" }),
+      deleteAccount:       (id)       => apiFetch(`/accounts/${id}`,          { method: "DELETE" }),
       createEntry:         (aid, d)   => { const { photo, ...fields } = d; return apiMultipart(`/accounts/${aid}/entries`, "POST", fields, photo); },
       updateEntry:         (id, d)    => { const { photo, removePhoto, ...fields } = d; if (removePhoto) fields.removePhoto = "true"; return apiMultipart(`/entries/${id}`, "PATCH", fields, photo); },
       voidEntry:           (id)       => apiFetch(`/entries/${id}/void`,      { method: "PATCH" }),
@@ -196,6 +205,7 @@ export default function GoldLedger({ token, user, onLogout }) {
       updateUserRole:      (id, role) => apiFetch(`/users/${id}/role`,        { method: "PATCH", body: { role } }),
       deactivateUser:      (id)       => apiFetch(`/users/${id}/deactivate`,  { method: "PATCH" }),
       reactivateUser:      (id)       => apiFetch(`/users/${id}/reactivate`,  { method: "PATCH" }),
+      deleteUser:          (id)       => apiFetch(`/users/${id}`,             { method: "DELETE" }),
     };
   }, [token, onLogout]);
 
@@ -300,6 +310,15 @@ export default function GoldLedger({ token, user, onLogout }) {
     try {
       await api.unarchiveAccount(activeId);
       await Promise.all([loadAccounts(), loadArchivedAccounts()]);
+    } catch (e) { if (e.message !== "Session expired") setError(e.message); }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!window.confirm("Are you sure you want to permanently delete this account and all its ledger history? This action cannot be undone.")) return;
+    try {
+      await api.deleteAccount(activeId);
+      await Promise.all([loadAccounts(), loadArchivedAccounts()]);
+      setActiveId(null);
     } catch (e) { if (e.message !== "Session expired") setError(e.message); }
   };
 
@@ -539,7 +558,7 @@ export default function GoldLedger({ token, user, onLogout }) {
         {!effectiveCollapsed ? (
           <div style={{ padding: "16px 18px", borderTop: `1px solid ${P.line}`, overflow: "hidden" }}>
             <div style={{ fontSize: 12, color: P.paper, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.name}</div>
-            <div style={{ fontSize: 10, color: P.mute, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.role}</div>
+            <div style={{ fontSize: 10, color: P.mute, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.role === "tour_officer" ? "Tour Officer" : user?.role}</div>
             <button onClick={onLogout}
               className="signout-btn"
               style={{ width: "100%", padding: "7px 0", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -565,7 +584,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                 display: "flex", flexDirection: "column", gap: 6
               }}>
                 <div style={{ fontSize: 11, color: P.paper, fontWeight: "bold", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{user?.name}</div>
-                <div style={{ fontSize: 9, color: P.mute, textTransform: "uppercase", letterSpacing: 1 }}>{user?.role}</div>
+                <div style={{ fontSize: 9, color: P.mute, textTransform: "uppercase", letterSpacing: 1 }}>{user?.role === "tour_officer" ? "Tour Officer" : user?.role}</div>
                 <hr style={{ border: "none", borderTop: `1px solid ${P.line}`, margin: "4px 0" }} />
                 <button onClick={onLogout}
                   className="signout-btn"
@@ -692,7 +711,7 @@ export default function GoldLedger({ token, user, onLogout }) {
 
                 {/* toolbar */}
                 <div className="ledger-toolbar" style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
-                  {!activeAccount.archived && (
+                  {!activeAccount.archived && user?.role !== "tour_officer" && (
                     <button onClick={() => setShowAddEntry((s) => !s)}
                       style={{ padding: "9px 16px", background: showAddEntry ? "transparent" : P.gold, color: showAddEntry ? P.gold : P.ink, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
                       {showAddEntry ? "Cancel" : "+ New entry"}
@@ -711,10 +730,17 @@ export default function GoldLedger({ token, user, onLogout }) {
                     </button>
                   )}
                   {isAdmin && activeAccount.archived && (
-                    <button onClick={handleUnarchiveAccount}
-                      style={{ marginLeft: "auto", padding: "9px 14px", background: "transparent", color: P.gold, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
-                      Unarchive
-                    </button>
+                    <>
+                      <button onClick={handleUnarchiveAccount}
+                        style={{ marginLeft: "auto", padding: "9px 14px", background: "transparent", color: P.gold, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
+                        Unarchive
+                      </button>
+                      <button onClick={handleDeleteAccount}
+                        title="Delete Permanently"
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "9px 12px", background: "transparent", color: P.red, border: `1px solid ${P.red}`, borderRadius: 8, cursor: "pointer", marginLeft: 8 }}>
+                        <Trash2 size={16} />
+                      </button>
+                    </>
                   )}
                 </div>
 
@@ -798,7 +824,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                           {r.runningBalanceMg < 0 ? "−" : ""}{mgToG(Math.abs(r.runningBalanceMg))}
                         </span>
                         <span style={{ textAlign: "right", position: "relative" }} className="action-menu-container">
-                          {(user?.role !== "operator" || isAdmin) && (
+                          {(user?.role !== "tour_officer" || isAdmin) && (
                             <button
                               className="ledger-row-action"
                               onClick={() => setActiveActionMenu(activeActionMenu === r._id ? null : r._id)}
@@ -825,7 +851,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                               boxShadow: "0 4px 12px rgba(0,0,0,0.5)", padding: "6px 0",
                               display: "flex", flexDirection: "column", minWidth: 120
                             }}>
-                              {user?.role !== "operator" && (
+                              {user?.role !== "tour_officer" && (
                                 <button
                                   className="dropdown-item"
                                   onClick={() => { setEditTarget(r); setActiveActionMenu(null); }}
@@ -1074,7 +1100,7 @@ function OverviewPanel({ accounts, onSelect, stats }) {
 
 // ── MyProfile ─────────────────────────────────────────────────────────────────
 function MyProfile({ user }) {
-  const ROLE_COLOR = { admin: P.gold, staff: P.mute, operator: "#8fa9c0" };
+  const ROLE_COLOR = { admin: P.gold, staff: P.mute, tour_officer: "#8fa9c0" };
   return (
     <div style={{ maxWidth: 480 }}>
       <div style={{ fontSize: 22, marginBottom: 28 }}>My Profile</div>
@@ -1087,7 +1113,7 @@ function MyProfile({ user }) {
         ))}
         <div>
           <div style={LAB}>Role</div>
-          <div style={{ fontSize: 14, color: ROLE_COLOR[user?.role] ?? P.mute, textTransform: "uppercase", letterSpacing: 1 }}>{user?.role}</div>
+          <div style={{ fontSize: 14, color: ROLE_COLOR[user?.role] ?? P.mute, textTransform: "uppercase", letterSpacing: 1 }}>{user?.role === "tour_officer" ? "Tour Officer" : user?.role}</div>
         </div>
       </div>
     </div>
@@ -1273,7 +1299,17 @@ function UserManagement({ api, currentUserId }) {
     finally { setSaving(null); }
   };
 
-  const ROLE_COLOR = { admin: P.gold, staff: P.mute, operator: "#8fa9c0" };
+  const handleDeleteUser = async (id) => {
+    if (!window.confirm("Are you sure you want to permanently delete this user? Their login access and profile will be completely destroyed. This cannot be undone.")) return;
+    setSaving(id);
+    try {
+      await api.deleteUser(id);
+      setUsers((prev) => prev.filter((x) => x._id !== id));
+    } catch (e) { setError(e.message); }
+    finally { setSaving(null); }
+  };
+
+  const ROLE_COLOR = { admin: P.gold, staff: P.mute, tour_officer: "#8fa9c0" };
   const active   = users.filter((u) => u.active !== false);
   const inactive = users.filter((u) => u.active === false);
 
@@ -1287,13 +1323,13 @@ function UserManagement({ api, currentUserId }) {
         <span style={{ fontSize: 13, color: P.mute }}>{u.email}</span>
         <span>
           {isSelf || dimmed ? (
-            <span style={{ fontSize: 12, color: ROLE_COLOR[u.role], textTransform: "uppercase", letterSpacing: 1 }}>{u.role}</span>
+            <span style={{ fontSize: 12, color: ROLE_COLOR[u.role], textTransform: "uppercase", letterSpacing: 1 }}>{u.role === "tour_officer" ? "Tour Officer" : u.role}</span>
           ) : (
             <select value={u.role} disabled={saving === u._id} onChange={(e) => handleRoleChange(u._id, e.target.value)}
               style={{ background: P.ink, border: `1px solid ${P.line}`, color: ROLE_COLOR[u.role], borderRadius: 6, padding: "4px 8px", fontFamily: "inherit", fontSize: 12, cursor: "pointer", opacity: saving === u._id ? 0.5 : 1 }}>
-              <option value="operator">operator</option>
-              <option value="staff">staff</option>
-              <option value="admin">admin</option>
+              <option value="tour_officer">Tour Officer</option>
+              <option value="staff">Staff</option>
+              <option value="admin">Admin</option>
             </select>
           )}
         </span>
@@ -1308,10 +1344,16 @@ function UserManagement({ api, currentUserId }) {
             </button>
           )}
           {dimmed && (
-            <button onClick={() => handleReactivate(u._id)} disabled={saving === u._id}
-              style={{ fontSize: 11, color: P.gold, background: "none", border: `1px solid ${P.gold}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit", opacity: saving === u._id ? 0.5 : 1 }}>
-              Reactivate
-            </button>
+            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+              <button onClick={() => handleReactivate(u._id)} disabled={saving === u._id}
+                style={{ fontSize: 11, color: P.gold, background: "none", border: `1px solid ${P.gold}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit", opacity: saving === u._id ? 0.5 : 1 }}>
+                Reactivate
+              </button>
+              <button onClick={() => handleDeleteUser(u._id)} disabled={saving === u._id} title="Delete Permanently"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", color: P.red, border: `1px solid ${P.red}`, borderRadius: 5, padding: "3px 6px", cursor: "pointer", opacity: saving === u._id ? 0.5 : 1 }}>
+                <Trash2 size={13} />
+              </button>
+            </div>
           )}
         </span>
       </div>
@@ -1376,7 +1418,7 @@ function CreateUserForm({ onSubmit, onCancel }) {
   const [name,     setName]     = useState("");
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
-  const [role,     setRole]     = useState("operator");
+  const [role,     setRole]     = useState("tour_officer");
   const [errors,   setErrors]   = useState({});
 
   const submit = () => {
@@ -1406,10 +1448,10 @@ function CreateUserForm({ onSubmit, onCancel }) {
         <div>
           <label style={LAB}>Role</label>
           <select value={role} onChange={(e) => setRole(e.target.value)}
-            style={{ ...inp(), color: role === "admin" ? P.gold : role === "operator" ? "#8fa9c0" : P.mute }}>
-            <option value="operator">operator</option>
-            <option value="staff">staff</option>
-            <option value="admin">admin</option>
+            style={{ ...inp(), color: role === "admin" ? P.gold : role === "tour_officer" ? "#8fa9c0" : P.mute }}>
+            <option value="tour_officer">Tour Officer</option>
+            <option value="staff">Staff</option>
+            <option value="admin">Admin</option>
           </select>
         </div>
       </div>

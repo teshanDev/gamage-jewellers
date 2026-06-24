@@ -7,10 +7,10 @@ const INP = { background: P.ink, border: `1px solid ${P.line}`, color: P.paper, 
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, initialError }) {
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
-  const [error,    setError]    = useState(null);
+  const [error,    setError]    = useState(initialError || null);
   const [loading,  setLoading]  = useState(false);
 
   const submit = async (e) => {
@@ -24,7 +24,12 @@ export default function Login({ onLogin }) {
         body:    JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed");
+      if (!res.ok) {
+        if (res.status === 403 && data.error === "outside_operating_hours") {
+          throw new Error(data.message || "Access Denied: The system is currently closed. Operating hours for your role are 7:00 AM to 8:00 PM.");
+        }
+        throw new Error(data.error || "Request failed");
+      }
       onLogin(data.token, data.user);
     } catch (err) {
       setError(err.message);

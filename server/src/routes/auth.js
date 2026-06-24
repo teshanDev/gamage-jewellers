@@ -16,6 +16,16 @@ router.post("/login", async (req, res) => {
     if (user.active === false)
       return res.status(403).json({ error: "Account deactivated" });
 
+    if (user.role === "staff" || user.role === "tour_officer") {
+      const hourString = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Colombo", hour: "numeric", hour12: false }).format(new Date());
+      let hour = parseInt(hourString, 10);
+      if (hour === 24) hour = 0;
+
+      if (hour >= 20 || hour < 7) {
+        return res.status(403).json({ error: "outside_operating_hours", message: "Access Denied: The system is currently closed. Operating hours for your role are 7:00 AM to 8:00 PM." });
+      }
+    }
+
     const token = jwt.sign(
       { sub: user._id.toString(), email: user.email, name: user.name, role: user.role },
       process.env.JWT_SECRET,
@@ -45,7 +55,7 @@ router.post("/register", async (req, res) => {
 
     const { name, email, password, role = "staff" } = req.body;
     if (!name || !email || !password) return res.status(400).json({ error: "name, email, password required" });
-    if (!["admin", "staff", "operator"].includes(role)) return res.status(400).json({ error: "role must be admin, staff, or operator" });
+    if (!["admin", "staff", "tour_officer"].includes(role)) return res.status(400).json({ error: "role must be admin, staff, or tour_officer" });
     if (await User.findOne({ email })) return res.status(409).json({ error: "Email already taken" });
 
     const passwordHash = await bcrypt.hash(password, 12);

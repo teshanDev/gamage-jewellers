@@ -16,7 +16,7 @@ router.post("/login", async (req, res) => {
     if (user.active === false)
       return res.status(403).json({ error: "Account deactivated" });
 
-    if (user.role === "staff" || user.role === "tour_officer") {
+    if (user.role === "staff" || user.role === "marketing_officer") {
       const hourString = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Colombo", hour: "numeric", hour12: false }).format(new Date());
       let hour = parseInt(hourString, 10);
       if (hour === 24) hour = 0;
@@ -55,7 +55,7 @@ router.post("/register", async (req, res) => {
 
     const { name, email, password, role = "staff" } = req.body;
     if (!name || !email || !password) return res.status(400).json({ error: "name, email, password required" });
-    if (!["admin", "staff", "tour_officer"].includes(role)) return res.status(400).json({ error: "role must be admin, staff, or tour_officer" });
+    if (!["admin", "staff", "marketing_officer"].includes(role)) return res.status(400).json({ error: "role must be admin, staff, or marketing_officer" });
     if (await User.findOne({ email })) return res.status(409).json({ error: "Email already taken" });
 
     const passwordHash = await bcrypt.hash(password, 12);

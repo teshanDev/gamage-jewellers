@@ -558,7 +558,7 @@ export default function GoldLedger({ token, user, onLogout }) {
         {!effectiveCollapsed ? (
           <div style={{ padding: "16px 18px", borderTop: `1px solid ${P.line}`, overflow: "hidden" }}>
             <div style={{ fontSize: 12, color: P.paper, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.name}</div>
-            <div style={{ fontSize: 10, color: P.mute, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.role === "tour_officer" ? "Tour Officer" : user?.role}</div>
+            <div style={{ fontSize: 10, color: P.mute, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.role === "marketing_officer" ? "Marketing Officer" : user?.role}</div>
             <button onClick={onLogout}
               className="signout-btn"
               style={{ width: "100%", padding: "7px 0", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -584,7 +584,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                 display: "flex", flexDirection: "column", gap: 6
               }}>
                 <div style={{ fontSize: 11, color: P.paper, fontWeight: "bold", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{user?.name}</div>
-                <div style={{ fontSize: 9, color: P.mute, textTransform: "uppercase", letterSpacing: 1 }}>{user?.role === "tour_officer" ? "Tour Officer" : user?.role}</div>
+                <div style={{ fontSize: 9, color: P.mute, textTransform: "uppercase", letterSpacing: 1 }}>{user?.role === "marketing_officer" ? "Marketing Officer" : user?.role}</div>
                 <hr style={{ border: "none", borderTop: `1px solid ${P.line}`, margin: "4px 0" }} />
                 <button onClick={onLogout}
                   className="signout-btn"
@@ -711,7 +711,7 @@ export default function GoldLedger({ token, user, onLogout }) {
 
                 {/* toolbar */}
                 <div className="ledger-toolbar" style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
-                  {!activeAccount.archived && user?.role !== "tour_officer" && (
+                  {!activeAccount.archived && user?.role !== "marketing_officer" && (
                     <button onClick={() => setShowAddEntry((s) => !s)}
                       style={{ padding: "9px 16px", background: showAddEntry ? "transparent" : P.gold, color: showAddEntry ? P.gold : P.ink, border: `1px solid ${P.gold}`, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
                       {showAddEntry ? "Cancel" : "+ New entry"}
@@ -824,7 +824,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                           {r.runningBalanceMg < 0 ? "−" : ""}{mgToG(Math.abs(r.runningBalanceMg))}
                         </span>
                         <span style={{ textAlign: "right", position: "relative" }} className="action-menu-container">
-                          {(user?.role !== "tour_officer" || isAdmin) && (
+                          {(user?.role !== "marketing_officer" || isAdmin) && (
                             <button
                               className="ledger-row-action"
                               onClick={() => setActiveActionMenu(activeActionMenu === r._id ? null : r._id)}
@@ -851,7 +851,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                               boxShadow: "0 4px 12px rgba(0,0,0,0.5)", padding: "6px 0",
                               display: "flex", flexDirection: "column", minWidth: 120
                             }}>
-                              {user?.role !== "tour_officer" && (
+                              {user?.role !== "marketing_officer" && (
                                 <button
                                   className="dropdown-item"
                                   onClick={() => { setEditTarget(r); setActiveActionMenu(null); }}
@@ -1100,7 +1100,7 @@ function OverviewPanel({ accounts, onSelect, stats }) {
 
 // ── MyProfile ─────────────────────────────────────────────────────────────────
 function MyProfile({ user }) {
-  const ROLE_COLOR = { admin: P.gold, staff: P.mute, tour_officer: "#8fa9c0" };
+  const ROLE_COLOR = { admin: P.gold, staff: P.mute, marketing_officer: "#8fa9c0" };
   return (
     <div style={{ maxWidth: 480 }}>
       <div style={{ fontSize: 22, marginBottom: 28 }}>My Profile</div>
@@ -1113,7 +1113,7 @@ function MyProfile({ user }) {
         ))}
         <div>
           <div style={LAB}>Role</div>
-          <div style={{ fontSize: 14, color: ROLE_COLOR[user?.role] ?? P.mute, textTransform: "uppercase", letterSpacing: 1 }}>{user?.role === "tour_officer" ? "Tour Officer" : user?.role}</div>
+          <div style={{ fontSize: 14, color: ROLE_COLOR[user?.role] ?? P.mute, textTransform: "uppercase", letterSpacing: 1 }}>{user?.role === "marketing_officer" ? "Marketing Officer" : user?.role}</div>
         </div>
       </div>
     </div>
@@ -1309,7 +1309,7 @@ function UserManagement({ api, currentUserId }) {
     finally { setSaving(null); }
   };
 
-  const ROLE_COLOR = { admin: P.gold, staff: P.mute, tour_officer: "#8fa9c0" };
+  const ROLE_COLOR = { admin: P.gold, staff: P.mute, marketing_officer: "#8fa9c0" };
   const active   = users.filter((u) => u.active !== false);
   const inactive = users.filter((u) => u.active === false);
 
@@ -1323,11 +1323,11 @@ function UserManagement({ api, currentUserId }) {
         <span style={{ fontSize: 13, color: P.mute }}>{u.email}</span>
         <span>
           {isSelf || dimmed ? (
-            <span style={{ fontSize: 12, color: ROLE_COLOR[u.role], textTransform: "uppercase", letterSpacing: 1 }}>{u.role === "tour_officer" ? "Tour Officer" : u.role}</span>
+            <span style={{ fontSize: 12, color: ROLE_COLOR[u.role], textTransform: "uppercase", letterSpacing: 1 }}>{u.role === "marketing_officer" ? "Marketing Officer" : u.role}</span>
           ) : (
             <select value={u.role} disabled={saving === u._id} onChange={(e) => handleRoleChange(u._id, e.target.value)}
               style={{ background: P.ink, border: `1px solid ${P.line}`, color: ROLE_COLOR[u.role], borderRadius: 6, padding: "4px 8px", fontFamily: "inherit", fontSize: 12, cursor: "pointer", opacity: saving === u._id ? 0.5 : 1 }}>
-              <option value="tour_officer">Tour Officer</option>
+              <option value="marketing_officer">Marketing Officer</option>
               <option value="staff">Staff</option>
               <option value="admin">Admin</option>
             </select>
@@ -1418,7 +1418,7 @@ function CreateUserForm({ onSubmit, onCancel }) {
   const [name,     setName]     = useState("");
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
-  const [role,     setRole]     = useState("tour_officer");
+  const [role,     setRole]     = useState("marketing_officer");
   const [errors,   setErrors]   = useState({});
 
   const submit = () => {
@@ -1448,8 +1448,8 @@ function CreateUserForm({ onSubmit, onCancel }) {
         <div>
           <label style={LAB}>Role</label>
           <select value={role} onChange={(e) => setRole(e.target.value)}
-            style={{ ...inp(), color: role === "admin" ? P.gold : role === "tour_officer" ? "#8fa9c0" : P.mute }}>
-            <option value="tour_officer">Tour Officer</option>
+            style={{ ...inp(), color: role === "admin" ? P.gold : role === "marketing_officer" ? "#8fa9c0" : P.mute }}>
+            <option value="marketing_officer">Marketing Officer</option>
             <option value="staff">Staff</option>
             <option value="admin">Admin</option>
           </select>

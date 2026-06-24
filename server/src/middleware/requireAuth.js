@@ -10,7 +10,7 @@ export function requireAuth(req, res, next) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 
-  if (req.user.role === "staff" || req.user.role === "tour_officer") {
+  if (req.user.role === "staff" || req.user.role === "marketing_officer") {
     const hourString = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Colombo", hour: "numeric", hour12: false }).format(new Date());
     let hour = parseInt(hourString, 10);
     if (hour === 24) hour = 0;

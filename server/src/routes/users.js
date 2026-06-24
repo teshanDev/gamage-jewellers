@@ -16,8 +16,8 @@ router.get("/", async (_req, res) => {
 router.patch("/:id/role", async (req, res) => {
   try {
     const { role } = req.body;
-    if (!["admin", "staff", "tour_officer"].includes(role))
-      return res.status(400).json({ error: "role must be admin, staff, or tour_officer" });
+    if (!["admin", "staff", "marketing_officer"].includes(role))
+      return res.status(400).json({ error: "role must be admin, staff, or marketing_officer" });
     if (req.params.id === req.user.sub)
       return res.status(400).json({ error: "Cannot change your own role" });
 

@@ -26,10 +26,10 @@ app.use(cors({
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
-app.use("/health", healthRouter);
-app.use("/auth", authRouter);
-app.use("/accounts", accountsRouter);
-app.use("/entries", entriesRouter);
-app.use("/users", usersRouter);
+app.use("/api/health", healthRouter);
+app.use("/api/auth", authRouter);
+app.use("/api/accounts", accountsRouter);
+app.use("/api/entries", entriesRouter);
+app.use("/api/users", usersRouter);
 
 export default app;

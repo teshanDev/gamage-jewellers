@@ -1,6 +1,6 @@
 import { Router } from "express";
 import Account from "../models/Account.js";
-import fs from "fs";
+import cloudinary from "../config/cloudinary.js";
 import Entry from "../models/Entry.js";
 import { computeBalance, buildRunningLedger, entryAmountMg } from "../lib/balance.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
@@ -140,24 +140,24 @@ router.post("/:id/entries", upload.single("photo"), async (req, res) => {
   try {
     const account = await Account.findById(req.params.id);
     if (!account) {
-      if (req.file) fs.unlink(req.file.path, () => {});
+      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       return res.status(404).json({ error: "Account not found" });
     }
     if (account.archived) {
-      if (req.file) fs.unlink(req.file.path, () => {});
+      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       return res.status(400).json({ error: "Cannot add entries to an archived account" });
     }
 
     const { date, type, details, weightMg, ratePct, cashCents, pricePerGramCents } = req.body;
 
     if (!date || !type || !details) {
-      if (req.file) fs.unlink(req.file.path, () => {});
+      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       return res.status(400).json({ error: "date, type, and details are required" });
     }
 
     const VALID = ["SALE", "RETURN", "GOLD_PAYMENT", "CASH_PAYMENT"];
     if (!VALID.includes(type)) {
-      if (req.file) fs.unlink(req.file.path, () => {});
+      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       return res.status(400).json({ error: `type must be one of: ${VALID.join(", ")}` });
     }
 
@@ -173,19 +173,19 @@ router.post("/:id/entries", upload.single("photo"), async (req, res) => {
     const parsedPricePerGramCents = parseNum(pricePerGramCents);
 
     if ((type === "SALE" || type === "RETURN") && (parsedWeightMg === undefined || parsedRatePct === undefined)) {
-      if (req.file) fs.unlink(req.file.path, () => {});
+      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       return res.status(400).json({ error: "weightMg and ratePct are required for SALE/RETURN" });
     }
     if (type === "GOLD_PAYMENT" && parsedWeightMg === undefined) {
-      if (req.file) fs.unlink(req.file.path, () => {});
+      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       return res.status(400).json({ error: "weightMg is required for GOLD_PAYMENT" });
     }
     if (type === "CASH_PAYMENT" && (parsedCashCents === undefined || parsedPricePerGramCents === undefined)) {
-      if (req.file) fs.unlink(req.file.path, () => {});
+      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       return res.status(400).json({ error: "cashCents and pricePerGramCents are required for CASH_PAYMENT" });
     }
 
-    const photo = req.file ? `/uploads/${req.file.filename}` : undefined;
+    const photo = req.file ? req.file.path : undefined;
 
     res.status(201).json(
       await Entry.create({

@@ -1,9 +1,9 @@
 import { Router } from "express";
-import fs from "fs";
+import cloudinary from "../config/cloudinary.js";
 import path from "path";
 import Entry from "../models/Entry.js";
 import { requireAuth, requireAdmin, requireRole } from "../middleware/requireAuth.js";
-import upload, { UPLOADS_DIR } from "../middleware/upload.js";
+import upload from "../middleware/upload.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -12,11 +12,11 @@ router.patch("/:id", requireRole("admin", "staff"), upload.single("photo"), asyn
   try {
     const entry = await Entry.findById(req.params.id);
     if (!entry) {
-      if (req.file) try { fs.unlinkSync(req.file.path); } catch {}
+      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       return res.status(404).json({ error: "Entry not found" });
     }
     if (entry.status === "voided") {
-      if (req.file) try { fs.unlinkSync(req.file.path); } catch {}
+      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
       return res.status(400).json({ error: "Cannot edit a voided entry" });
     }
 
@@ -64,16 +64,23 @@ router.patch("/:id", requireRole("admin", "staff"), upload.single("photo"), asyn
     }
 
     if (req.file) {
-      entry.photo = `/uploads/${req.file.filename}`;
+      entry.photo = req.file.path;
       photoChanged = true;
     }
 
     if (photoChanged && oldPhoto) {
       try {
-        const oldFilename = oldPhoto.startsWith('/uploads/') ? oldPhoto.replace('/uploads/', '') : oldPhoto;
-        fs.unlinkSync(path.join(UPLOADS_DIR, oldFilename));
+        if (!oldPhoto.startsWith("http")) {
+          // Ignoring old local files cleanup for simplicity 
+        } else {
+          // Extract public_id from Cloudinary URL (e.g. gamage_jewellers/xyz)
+          const parts = oldPhoto.split("/");
+          const filename = parts.pop().split(".")[0];
+          const folder = parts.pop();
+          cloudinary.uploader.destroy(`${folder}/${filename}`).catch(() => {});
+        }
       } catch (err) {
-        console.error("Failed to delete old photo file:", err);
+        console.error("Failed to delete old photo:", err);
       }
     }
 

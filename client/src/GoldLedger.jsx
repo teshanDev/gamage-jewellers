@@ -13,6 +13,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 const getPhotoUrl = (photo) => {
   if (!photo) return null;
+  if (photo.startsWith("http")) return photo;
   const path = photo.startsWith('/') ? photo : `/uploads/${photo}`;
   return `${API_BASE}${path}`;
 };
@@ -118,6 +119,20 @@ export default function GoldLedger({ token, user, onLogout }) {
   const [showProfileMenu,  setShowProfileMenu]  = useState(false);
   const [activeActionMenu, setActiveActionMenu] = useState(null);
 
+  const [isOnline,         setIsOnline]         = useState(navigator.onLine);
+  const [lastSyncTime,     setLastSyncTime]     = useState(null);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
   const [isMobile, setIsMobile] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -213,18 +228,19 @@ export default function GoldLedger({ token, user, onLogout }) {
     try {
       setLoadingList(true); setListError(null);
       setAccounts(await api.getAccounts());
+      setLastSyncTime(new Date());
     } catch (e) {
       if (e.message !== "Session expired") setListError(e.message);
     } finally { setLoadingList(false); }
   }, [api]);
 
   const loadArchivedAccounts = useCallback(async () => {
-    try { setArchivedAccounts(await api.getArchivedAccounts()); }
+    try { setArchivedAccounts(await api.getArchivedAccounts()); setLastSyncTime(new Date()); }
     catch (e) { if (e.message !== "Session expired") setError(e.message); }
   }, [api]);
 
   const loadStats = useCallback(async () => {
-    try { setStats(await api.getStats()); }
+    try { setStats(await api.getStats()); setLastSyncTime(new Date()); }
     catch { /* non-critical, charts just won't render */ }
   }, [api]);
 
@@ -233,6 +249,7 @@ export default function GoldLedger({ token, user, onLogout }) {
     try {
       setLoadingLedger(true);
       setActiveAccount(await api.getAccount(id));
+      setLastSyncTime(new Date());
     } catch (e) {
       if (e.message !== "Session expired") setError(e.message);
     } finally { setLoadingLedger(false); }
@@ -604,6 +621,19 @@ export default function GoldLedger({ token, user, onLogout }) {
 
       {/* ── main content ── */}
       <main style={{ flex: 1, overflowY: "auto", padding: 28, minWidth: 0 }}>
+        {/* Network Status Indicator */}
+        <div className="flex justify-end mb-4" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+          {isOnline ? (
+            <div className="flex items-center gap-2 text-xs text-gray-400" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: P.mute }}>
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }}></span>
+              Last updated: {lastSyncTime ? lastSyncTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "..."}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs font-bold text-yellow-500" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#eab308", fontWeight: "bold" }}>
+              ⚠️ Offline Mode - Showing cached data from {lastSyncTime ? lastSyncTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "..."}
+            </div>
+          )}
+        </div>
 
         {error && (
           <div style={{ background: "#3a1a1a", border: `1px solid ${P.red}`, borderRadius: 8, padding: "10px 14px", color: P.red, marginBottom: 16, fontSize: 14, display: "flex", justifyContent: "space-between" }}>

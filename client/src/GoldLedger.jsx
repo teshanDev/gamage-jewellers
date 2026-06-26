@@ -9,7 +9,7 @@ import {
   ResponsiveContainer, Cell,
 } from "recharts";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 const getPhotoUrl = (photo) => {
   if (!photo) return null;
@@ -168,7 +168,7 @@ export default function GoldLedger({ token, user, onLogout }) {
 
   const api = useMemo(() => {
     const apiFetch = async (path, opts = {}) => {
-      const res = await fetch(`${API_BASE}${path}`, {
+      const res = await fetch(`${API_BASE}/api${path}`, {
         headers: {
           ...(opts.body != null ? { "Content-Type": "application/json" } : {}),
           Authorization: `Bearer ${token}`,
@@ -189,7 +189,7 @@ export default function GoldLedger({ token, user, onLogout }) {
       const fd = new FormData();
       Object.entries(fields).forEach(([k, v]) => { if (v != null) fd.append(k, String(v)); });
       if (photo) fd.append("photo", photo);
-      const res = await fetch(`${API_BASE}${path}`, {
+      const res = await fetch(`${API_BASE}/api${path}`, {
         method,
         headers: { Authorization: `Bearer ${token}` },
         body: fd,

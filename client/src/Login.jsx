@@ -5,7 +5,7 @@ const P = { ink: "#1a1712", panel: "#211d17", line: "#3a342a", gold: "#c9a227", 
 const LAB = { display: "block", fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: P.mute, marginBottom: 4 };
 const INP = { background: P.ink, border: `1px solid ${P.line}`, color: P.paper, padding: "10px 12px", borderRadius: 8, fontFamily: "inherit", fontSize: 15, width: "100%", boxSizing: "border-box" };
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
+const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 export default function Login({ onLogin, initialError }) {
   const [email,    setEmail]    = useState("");

@@ -96,10 +96,18 @@ const TYPE_META = {
 };
 
 // ── root component ───────────────────────────────────────────────────────────
+
+
 export default function GoldLedger({ token, user, onLogout }) {
   const isAdmin = user?.role === "admin";
 
-  const [view,             setView]             = useState("overview"); // "overview"|"accounts"|"users"|"profile"
+  const [view,             setView]             = useState(isAdmin ? "overview" : "accounts"); // "overview"|"accounts"|"users"|"profile"
+
+  useEffect(() => {
+    if (view === "overview" && !isAdmin) {
+      setView("accounts");
+    }
+  }, [view, isAdmin]);
   const [accounts,         setAccounts]         = useState([]);
   const [archivedAccounts, setArchivedAccounts] = useState([]);
   const [showArchived,     setShowArchived]     = useState(false);
@@ -114,13 +122,48 @@ export default function GoldLedger({ token, user, onLogout }) {
   const [showNewAcct,      setShowNewAcct]      = useState(false);
   const [editTarget,       setEditTarget]       = useState(null);
   const [search,           setSearch]           = useState("");
-  const [lightboxPhoto,    setLightboxPhoto]    = useState(null);
+  const [lightboxPhotos,   setLightboxPhotos]   = useState(null);
+  const [lightboxIndex,    setLightboxIndex]    = useState(0);
   const [isCollapsed,      setIsCollapsed]      = useState(false);
   const [showProfileMenu,  setShowProfileMenu]  = useState(false);
   const [activeActionMenu, setActiveActionMenu] = useState(null);
 
   const [isOnline,         setIsOnline]         = useState(navigator.onLine);
   const [lastSyncTime,     setLastSyncTime]     = useState(null);
+  const [liveDeviceCount,  setLiveDeviceCount]  = useState(1);
+
+  useEffect(() => {
+    let deviceId = sessionStorage.getItem("deviceId");
+    if (!deviceId) {
+      deviceId = Math.random().toString(36).substring(2, 15);
+      sessionStorage.setItem("deviceId", deviceId);
+    }
+
+    const sendHeartbeat = () => {
+      fetch(`${API_BASE}/api/analytics/heartbeat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId })
+      }).catch(() => {});
+    };
+
+    const fetchLiveCount = () => {
+      fetch(`${API_BASE}/api/analytics/live-count`)
+        .then(res => res.json())
+        .then(data => { if (data && typeof data.count === 'number') setLiveDeviceCount(data.count); })
+        .catch(() => {});
+    };
+
+    sendHeartbeat();
+    fetchLiveCount();
+    const hbInterval = setInterval(sendHeartbeat, 30 * 1000);
+    const countInterval = setInterval(fetchLiveCount, 15 * 1000);
+
+    return () => {
+      clearInterval(hbInterval);
+      clearInterval(countInterval);
+    };
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -166,6 +209,18 @@ export default function GoldLedger({ token, user, onLogout }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const [isBlurred, setIsBlurred] = useState(false);
+  useEffect(() => {
+    const handleBlur = () => setIsBlurred(true);
+    const handleFocus = () => setIsBlurred(false);
+    window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
   const api = useMemo(() => {
     const apiFetch = async (path, opts = {}) => {
       const res = await fetch(`${API_BASE}/api${path}`, {
@@ -185,10 +240,12 @@ export default function GoldLedger({ token, user, onLogout }) {
       if (!res.ok) throw new Error(data.error || "Request failed");
       return data;
     };
-    const apiMultipart = async (path, method, fields, photo) => {
+    const apiMultipart = async (path, method, fields, files) => {
       const fd = new FormData();
       Object.entries(fields).forEach(([k, v]) => { if (v != null) fd.append(k, String(v)); });
-      if (photo) fd.append("photo", photo);
+      if (files && files.length > 0) {
+        files.forEach(f => fd.append("images", f));
+      }
       const res = await fetch(`${API_BASE}/api${path}`, {
         method,
         headers: { Authorization: `Bearer ${token}` },
@@ -212,8 +269,8 @@ export default function GoldLedger({ token, user, onLogout }) {
       archiveAccount:      (id)       => apiFetch(`/accounts/${id}/archive`,  { method: "PATCH" }),
       unarchiveAccount:    (id)       => apiFetch(`/accounts/${id}/unarchive`,{ method: "PATCH" }),
       deleteAccount:       (id)       => apiFetch(`/accounts/${id}`,          { method: "DELETE" }),
-      createEntry:         (aid, d)   => { const { photo, ...fields } = d; return apiMultipart(`/accounts/${aid}/entries`, "POST", fields, photo); },
-      updateEntry:         (id, d)    => { const { photo, removePhoto, ...fields } = d; if (removePhoto) fields.removePhoto = "true"; return apiMultipart(`/entries/${id}`, "PATCH", fields, photo); },
+      createEntry:         (aid, d)   => { const { photos, ...fields } = d; return apiMultipart(`/accounts/${aid}/entries`, "POST", fields, photos); },
+      updateEntry:         (id, d)    => { const { photos, removePhoto, ...fields } = d; if (removePhoto) fields.removePhoto = "true"; return apiMultipart(`/entries/${id}`, "PATCH", fields, photos); },
       voidEntry:           (id)       => apiFetch(`/entries/${id}/void`,      { method: "PATCH" }),
       getUsers:            ()         => apiFetch("/users"),
       createUser:          (d)        => apiFetch("/auth/register",           { method: "POST",  body: d }),
@@ -424,7 +481,7 @@ export default function GoldLedger({ token, user, onLogout }) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100vh", background: P.ink, color: P.paper, fontFamily: "Georgia, 'Times New Roman', serif", overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100vh", background: P.ink, color: P.paper, fontFamily: "Georgia, 'Times New Roman', serif", overflow: "hidden", filter: isBlurred ? "blur(10px)" : "none" }} onContextMenu={(e) => e.preventDefault()}>
       <style>{`
         /* Responsive utilities */
         .accounts-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, 1fr); }
@@ -566,7 +623,7 @@ export default function GoldLedger({ token, user, onLogout }) {
         </div>
 
         <div style={{ flex: 1, padding: "0 10px", display: "flex", flexDirection: "column", gap: 2 }}>
-          <NavItem id="overview" label="Overview" />
+          {isAdmin && <NavItem id="overview" label="Overview" />}
           <NavItem id="accounts" label="Accounts" />
           {isAdmin && <NavItem id="users" label="Users & Access" />}
           <NavItem id="profile" label="My Profile" />
@@ -623,16 +680,23 @@ export default function GoldLedger({ token, user, onLogout }) {
       <main style={{ flex: 1, overflowY: "auto", padding: 28, minWidth: 0 }}>
         {/* Network Status Indicator */}
         <div className="flex justify-end mb-4" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-          {isOnline ? (
-            <div className="flex items-center gap-2 text-xs text-gray-400" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: P.mute }}>
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }}></span>
-              Last updated: {lastSyncTime ? lastSyncTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "..."}
+          <div className="flex items-center gap-4" style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 14, color: P.mute }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              👥 {liveDeviceCount} staff online
             </div>
-          ) : (
-            <div className="flex items-center gap-2 text-xs font-bold text-yellow-500" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#eab308", fontWeight: "bold" }}>
-              ⚠️ Offline Mode - Showing cached data from {lastSyncTime ? lastSyncTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "..."}
-            </div>
-          )}
+            <div style={{ width: 1, height: 14, background: P.line }}></div>
+            {isOnline ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="animate-pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }}></span>
+                Last updated: {lastSyncTime ? lastSyncTime.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "..."}
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#ef4444" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444" }}></span>
+                Offline - last synced: {lastSyncTime ? lastSyncTime.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "..."}
+              </div>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -643,7 +707,7 @@ export default function GoldLedger({ token, user, onLogout }) {
         )}
 
         {/* Overview */}
-        {view === "overview" && (
+        {view === "overview" && isAdmin && (
           loadingList
             ? <div style={{ color: P.mute, fontStyle: "italic", marginTop: 80, textAlign: "center" }}>Loading…</div>
             : <OverviewPanel accounts={accounts} onSelect={selectAccount} stats={stats} />
@@ -690,12 +754,12 @@ export default function GoldLedger({ token, user, onLogout }) {
                         onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.borderColor = P.gold; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = P.panel; e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.borderColor = P.line; }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-                          <div style={{ fontSize: 18, color: P.paper, fontFamily: "Georgia, serif", fontWeight: "bold" }}>{a.name}</div>
+                          <div className="uppercase" style={{ fontSize: 18, color: P.paper, fontFamily: "Georgia, serif", fontWeight: "bold", textTransform: "uppercase" }}>{a.name}</div>
                           {a.archived && (
                             <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 4, padding: "2px 6px" }}>Archived</span>
                           )}
                         </div>
-                        <div style={{ fontSize: 13, color: P.mute, fontStyle: "italic", marginBottom: 16 }}>{a.place || "No location"}</div>
+                        <div className="uppercase" style={{ fontSize: 13, color: P.mute, fontStyle: "italic", marginBottom: 16, textTransform: "uppercase" }}>{a.place || "No location"}</div>
                         <div style={{ fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: P.mute, marginBottom: 6 }}>Balance Owed</div>
                         <div style={{ fontFamily: "'SF Mono', Menlo, monospace", fontSize: 22, color: bal < 0 ? P.red : bal === 0 ? P.mute : P.gold }}>
                           {bal < 0 ? "−" : ""}{mgToG(Math.abs(bal))} <span style={{ fontSize: 13, color: P.mute }}>g</span>
@@ -720,14 +784,14 @@ export default function GoldLedger({ token, user, onLogout }) {
                 <div className="client-info-block" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 26 }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ color: P.paper, fontSize: 28, lineHeight: 1.1, fontFamily: "inherit", fontWeight: "bold" }}>
+                      <div className="uppercase" style={{ color: P.paper, fontSize: 28, lineHeight: 1.1, fontFamily: "inherit", fontWeight: "bold", textTransform: "uppercase" }}>
                         {activeAccount.name}
                       </div>
                       {activeAccount?.archived && (
                         <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 4, padding: "2px 6px" }}>Archived</span>
                       )}
                     </div>
-                    <div style={{ color: P.mute, fontStyle: "italic", fontSize: 14, marginTop: 6 }}>
+                    <div className="uppercase" style={{ color: P.mute, fontStyle: "italic", fontSize: 14, marginTop: 6, textTransform: "uppercase" }}>
                       {activeAccount.place}{activeAccount.phone ? ` · ${activeAccount.phone}` : ""}
                     </div>
                   </div>
@@ -794,47 +858,31 @@ export default function GoldLedger({ token, user, onLogout }) {
                     return (
                       <div key={r._id} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "88px 70px 1fr 120px 110px 130px 64px", padding: "12px 14px", borderTop: `1px solid ${P.line}`, alignItems: "center" }}>
                         <span style={{ color: P.mute, fontFamily: "Georgia, serif", fontSize: 13 }}>
-                          {new Date(r.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                          {new Date(r.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
                         </span>
                         
                         {/* Photo Column */}
                         <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center" }}>
-                          {r.photo ? (
+                          {r.photos && r.photos.length > 0 ? (
                             <button
-                              onClick={() => setLightboxPhoto(getPhotoUrl(r.photo))}
+                              onClick={() => { setLightboxPhotos(r.photos.map(getPhotoUrl)); setLightboxIndex(0); }}
                               style={{
-                                background: "none", border: "none", padding: 0, cursor: "pointer",
-                                width: 48, height: 48, position: "relative"
+                                background: P.panel, border: `1px solid ${P.line}`, borderRadius: 8, cursor: "pointer",
+                                width: 56, height: 42, display: "flex", alignItems: "center", justifyContent: "center", position: "relative",
+                                transition: "all 0.2s ease-in-out", overflow: "hidden"
                               }}
+                              onMouseEnter={(e) => e.currentTarget.style.borderColor = P.gold}
+                              onMouseLeave={(e) => e.currentTarget.style.borderColor = P.line}
                             >
-                              <img
-                                src={getPhotoUrl(r.photo)}
-                                alt="Item preview"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                  e.currentTarget.nextSibling.style.display = 'flex';
-                                }}
-                                style={{
-                                  width: "100%", height: "100%", objectFit: "cover",
-                                  border: `1px solid ${P.gold}`, borderRadius: 6,
-                                  transition: "transform 0.15s ease-in-out"
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.08)"}
-                                onMouseLeave={(e) => e.currentTarget.style.transform = "none"}
-                              />
-                              <div
-                                style={{
-                                  display: "none", width: "100%", height: "100%",
-                                  background: P.ink, border: `1px solid ${P.line}`, borderRadius: 6,
-                                  alignItems: "center", justifyContent: "center", color: P.mute
-                                }}
-                                title="Image failed to load"
-                              >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                                  <circle cx="12" cy="13" r="4"></circle>
-                                </svg>
+                              <img src={getPhotoUrl(r.photos[0])} alt="Cover" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.6 }} />
+                              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <Camera size={18} color={P.paper} />
                               </div>
+                              {r.photos.length > 1 && (
+                                <div style={{ position: "absolute", bottom: 2, right: 2, background: "rgba(0,0,0,0.7)", color: P.gold, fontSize: 9, fontWeight: "bold", padding: "1px 4px", borderRadius: 4 }}>
+                                  +{r.photos.length - 1}
+                                </div>
+                              )}
                             </button>
                           ) : (
                             <span style={{ color: P.mute, marginLeft: 16 }}>—</span>
@@ -945,8 +993,8 @@ export default function GoldLedger({ token, user, onLogout }) {
       {editTarget && (
         <EditModal entry={editTarget} onSubmit={(d) => handleEditEntry(editTarget._id, d)} onClose={() => setEditTarget(null)} />
       )}
-      {lightboxPhoto && (
-        <PhotoLightbox src={lightboxPhoto} onClose={() => setLightboxPhoto(null)} />
+      {lightboxPhotos && (
+        <PhotoLightbox images={lightboxPhotos} initialIndex={lightboxIndex} onClose={() => { setLightboxPhotos(null); setLightboxIndex(0); }} />
       )}
     </div>
   );
@@ -957,7 +1005,7 @@ function ChartTooltip({ active, payload, label, unit = "g" }) {
   if (!active || !payload?.length) return null;
   return (
     <div style={{ background: P.panel, border: `1px solid ${P.line}`, borderRadius: 8, padding: "10px 14px", fontSize: 12, fontFamily: "Georgia, serif" }}>
-      <div style={{ color: P.mute, marginBottom: 6 }}>{label}</div>
+      <div style={{ color: P.mute, marginBottom: 6 }}>{payload[0]?.payload?.fullMonth || label}</div>
       {payload.map((p) => (
         <div key={p.dataKey} style={{ color: p.color, marginTop: 2 }}>
           {p.name}: {formatGoldWeight(p.value, false)} {unit}
@@ -982,7 +1030,8 @@ function OverviewPanel({ accounts, onSelect, stats }) {
 
   // Monthly chart data — reads from entryAmountMg results via /accounts/stats
   const monthlyData = stats.map(({ month, salesMg, settlementsMg }) => ({
-    month: new Date(month + "-02").toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
+    month: new Date(month + "-02").toLocaleDateString("en-GB", { month: "short", year: "2-digit" }).replace(" ", " '"),
+    fullMonth: new Date(month + "-02").toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
     salesG:       salesMg       / 1000,
     settlementsG: settlementsMg / 1000,
   }));
@@ -1001,7 +1050,8 @@ function OverviewPanel({ accounts, onSelect, stats }) {
   const marginChartData = last12Keys.map((key) => {
     const entry = stats.find((s) => s.month === key);
     return {
-      month:   new Date(key + "-02").toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
+      month:   new Date(key + "-02").toLocaleDateString("en-GB", { month: "short", year: "2-digit" }).replace(" ", " '"),
+      fullMonth: new Date(key + "-02").toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
       marginG: (entry?.marginMg ?? 0) / 1000,
     };
   });
@@ -1113,8 +1163,8 @@ function OverviewPanel({ accounts, onSelect, stats }) {
                   style={{ display: "grid", gridTemplateColumns: "1fr 120px 160px", padding: "12px 16px", borderTop: `1px solid ${P.line}`, alignItems: "center", cursor: "pointer" }}
                   onMouseEnter={(e) => e.currentTarget.style.background = P.panel}
                   onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                  <span style={{ fontFamily: "Georgia, serif", fontSize: 14, color: P.paper }}>{a.name}</span>
-                  <span style={{ fontStyle: "italic", color: P.mute, fontSize: 13 }}>{a.place}</span>
+                  <span className="uppercase" style={{ fontFamily: "Georgia, serif", fontSize: 14, color: P.paper, textTransform: "uppercase" }}>{a.name}</span>
+                  <span className="uppercase" style={{ fontStyle: "italic", color: P.mute, fontSize: 13, textTransform: "uppercase" }}>{a.place}</span>
                   <span style={{ textAlign: "right", fontFamily: "'SF Mono', Menlo, monospace", fontSize: 14, color: bal < 0 ? P.red : bal === 0 ? P.mute : P.gold }}>
                     {bal < 0 ? "−" : ""}{mgToG(Math.abs(bal))}
                   </span>
@@ -1185,8 +1235,8 @@ function EntryForm({ onSubmit, onCancel }) {
   const [details, setDetails] = useState("");
   const [f,       setF]       = useState({ weight: "", rate: "103", cash: "", price: "" });
   const [errors,  setErrors]  = useState({});
-  const [photo,        setPhoto]        = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photos,        setPhotos]        = useState([]);
+  const [photoPreviews, setPhotoPreviews] = useState([]);
   const fileInputRef = useRef(null);
 
   const needsWeight = type === "SALE" || type === "RETURN" || type === "GOLD_PAYMENT";
@@ -1194,15 +1244,15 @@ function EntryForm({ onSubmit, onCancel }) {
   const needsPhoto  = type === "SALE" || type === "RETURN";
 
   useEffect(() => {
-    if (!photo) { setPhotoPreview(null); return; }
-    const url = URL.createObjectURL(photo);
-    setPhotoPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [photo]);
+    if (photos.length === 0) { setPhotoPreviews([]); return; }
+    const urls = photos.map(p => URL.createObjectURL(p));
+    setPhotoPreviews(urls);
+    return () => urls.forEach(u => URL.revokeObjectURL(u));
+  }, [photos]);
 
   // Clear photo when switching away from SALE/RETURN
   useEffect(() => {
-    if (!needsPhoto) { setPhoto(null); if (fileInputRef.current) fileInputRef.current.value = ""; }
+    if (!needsPhoto) { setPhotos([]); if (fileInputRef.current) fileInputRef.current.value = ""; }
   }, [needsPhoto]);
 
   const submit = () => {
@@ -1216,9 +1266,9 @@ function EntryForm({ onSubmit, onCancel }) {
       base.cashCents         = Math.round(parseFloat(f.cash)  * 100);
       base.pricePerGramCents = Math.round(parseFloat(f.price) * 100);
     }
-    if (photo) base.photo = photo;
+    if (photos.length > 0) base.photos = photos;
     onSubmit(base);
-    setPhoto(null);
+    setPhotos([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -1259,22 +1309,27 @@ function EntryForm({ onSubmit, onCancel }) {
       </div>
       {needsPhoto && (
         <div style={{ marginTop: 12 }}>
-          <label style={LAB}>Photo</label>
-          <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }}
-            onChange={(e) => { if (e.target.files?.[0]) setPhoto(e.target.files[0]); }} />
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <label style={LAB}>Photos (Max 5)</label>
+          <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp" style={{ display: "none" }}
+            onChange={(e) => { if (e.target.files) setPhotos(Array.from(e.target.files).slice(0, 5)); }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <button type="button" onClick={() => fileInputRef.current?.click()}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
               <Camera size={16} />
-              {photo ? "Change photo" : "Attach photo"}
+              {photos.length > 0 ? "Change photos" : "Attach photos"}
             </button>
-            {photoPreview && (
-              <div style={{ position: "relative", display: "inline-block" }}>
-                <img src={photoPreview} alt="Preview" style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 6, border: `1px solid ${P.line}` }} />
-                <button type="button" onClick={() => { setPhoto(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+            {photoPreviews.map((preview, i) => (
+              <div key={i} style={{ position: "relative", display: "inline-block" }}>
+                <img src={preview} alt={`Preview ${i}`} style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 6, border: `1px solid ${P.line}` }} />
+                <button type="button" onClick={() => {
+                  const newPhotos = [...photos];
+                  newPhotos.splice(i, 1);
+                  setPhotos(newPhotos);
+                  if (newPhotos.length === 0 && fileInputRef.current) fileInputRef.current.value = "";
+                }}
                   style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: P.red, color: P.ink, border: "none", cursor: "pointer", fontSize: 11, lineHeight: "18px", textAlign: "center", padding: 0 }}>×</button>
               </div>
-            )}
+            ))}
           </div>
         </div>
       )}
@@ -1501,20 +1556,20 @@ function EditModal({ entry, onSubmit, onClose }) {
   const [ratePct, setRatePct] = useState(entry.ratePct           != null ? String(entry.ratePct)                  : "");
   const [cashRs,  setCashRs]  = useState(entry.cashCents         != null ? String(entry.cashCents / 100)          : "");
   const [priceRs, setPriceRs] = useState(entry.pricePerGramCents != null ? String(entry.pricePerGramCents / 100)  : "");
-  const [newPhoto,     setNewPhoto]     = useState(null);
+  const [newPhotos,     setNewPhotos]     = useState([]);
   const [photoRemoved, setPhotoRemoved] = useState(false);
-  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoPreviews, setPhotoPreviews] = useState([]);
   const editFileRef = useRef(null);
 
   const canHavePhoto = entry.type === "SALE" || entry.type === "RETURN";
-  const existingPhotoUrl = entry.photo && !photoRemoved && !newPhoto ? getPhotoUrl(entry.photo) : null;
+  const existingPhotoUrls = entry.photos && !photoRemoved && newPhotos.length === 0 ? entry.photos.map(getPhotoUrl) : [];
 
   useEffect(() => {
-    if (!newPhoto) { setPhotoPreview(null); return; }
-    const url = URL.createObjectURL(newPhoto);
-    setPhotoPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [newPhoto]);
+    if (newPhotos.length === 0) { setPhotoPreviews([]); return; }
+    const urls = newPhotos.map(p => URL.createObjectURL(p));
+    setPhotoPreviews(urls);
+    return () => urls.forEach(u => URL.revokeObjectURL(u));
+  }, [newPhotos]);
 
   const i = inp({ background: P.panel });
 
@@ -1528,7 +1583,7 @@ function EditModal({ entry, onSubmit, onClose }) {
       data.cashCents         = Math.round(parseFloat(cashRs)  * 100);
       data.pricePerGramCents = Math.round(parseFloat(priceRs) * 100);
     }
-    if (newPhoto) data.photo = newPhoto;
+    if (newPhotos.length > 0) data.photos = newPhotos;
     else if (photoRemoved) data.removePhoto = true;
     onSubmit(data);
   };
@@ -1560,30 +1615,37 @@ function EditModal({ entry, onSubmit, onClose }) {
           )}
           {canHavePhoto && (
             <div>
-              <label style={LAB}>Photo</label>
-              <input ref={editFileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }}
-                onChange={(e) => { if (e.target.files?.[0]) { setNewPhoto(e.target.files[0]); setPhotoRemoved(false); } }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <label style={LAB}>Photos (Max 5)</label>
+              <input ref={editFileRef} type="file" multiple accept="image/jpeg,image/png,image/webp" style={{ display: "none" }}
+                onChange={(e) => { if (e.target.files) { setNewPhotos(Array.from(e.target.files).slice(0, 5)); setPhotoRemoved(false); } }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <button type="button" onClick={() => editFileRef.current?.click()}
                   style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: "transparent", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
                   <Camera size={16} />
-                  {existingPhotoUrl || photoPreview ? "Replace photo" : "Attach photo"}
+                  {existingPhotoUrls.length > 0 || photoPreviews.length > 0 ? "Replace photos" : "Attach photos"}
                 </button>
-                {existingPhotoUrl && (
-                  <div style={{ position: "relative", display: "inline-block" }}>
-                    <img src={existingPhotoUrl} alt="Existing" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${P.line}` }} />
-                    <button type="button" onClick={() => { setPhotoRemoved(true); setNewPhoto(null); if (editFileRef.current) editFileRef.current.value = ""; }}
+                {existingPhotoUrls.map((url, i) => (
+                  <div key={`exist-${i}`} style={{ position: "relative", display: "inline-block" }}>
+                    <img src={url} alt={`Existing ${i}`} style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${P.line}` }} />
+                    {i === 0 && (
+                      <button type="button" onClick={() => { setPhotoRemoved(true); setNewPhotos([]); if (editFileRef.current) editFileRef.current.value = ""; }}
+                        style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: P.red, color: P.ink, border: "none", cursor: "pointer", fontSize: 11, lineHeight: "18px", textAlign: "center", padding: 0 }}>×</button>
+                    )}
+                  </div>
+                ))}
+                {photoPreviews.map((preview, i) => (
+                  <div key={`new-${i}`} style={{ position: "relative", display: "inline-block" }}>
+                    <img src={preview} alt={`New ${i}`} style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${P.gold}` }} />
+                    <button type="button" onClick={() => {
+                      const updatedPhotos = [...newPhotos];
+                      updatedPhotos.splice(i, 1);
+                      setNewPhotos(updatedPhotos);
+                      if (updatedPhotos.length === 0 && editFileRef.current) editFileRef.current.value = "";
+                    }}
                       style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: P.red, color: P.ink, border: "none", cursor: "pointer", fontSize: 11, lineHeight: "18px", textAlign: "center", padding: 0 }}>×</button>
                   </div>
-                )}
-                {photoPreview && (
-                  <div style={{ position: "relative", display: "inline-block" }}>
-                    <img src={photoPreview} alt="New" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: `1px solid ${P.gold}` }} />
-                    <button type="button" onClick={() => { setNewPhoto(null); if (editFileRef.current) editFileRef.current.value = ""; }}
-                      style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: P.red, color: P.ink, border: "none", cursor: "pointer", fontSize: 11, lineHeight: "18px", textAlign: "center", padding: 0 }}>×</button>
-                  </div>
-                )}
-                {photoRemoved && !newPhoto && <span style={{ fontSize: 11, color: P.red, fontStyle: "italic" }}>Photo will be removed</span>}
+                ))}
+                {photoRemoved && newPhotos.length === 0 && <span style={{ fontSize: 11, color: P.red, fontStyle: "italic" }}>Photos will be removed</span>}
               </div>
             </div>
           )}
@@ -1598,16 +1660,26 @@ function EditModal({ entry, onSubmit, onClose }) {
 }
 
 // ── PhotoLightbox ────────────────────────────────────────────────────────────
-function PhotoLightbox({ src, onClose }) {
+function PhotoLightbox({ images, initialIndex = 0, onClose }) {
   const [hasError, setHasError] = useState(false);
+  const [index, setIndex] = useState(initialIndex);
+
+  useEffect(() => setHasError(false), [index]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") setIndex(i => (i > 0 ? i - 1 : images.length - 1));
+      if (e.key === "ArrowRight") setIndex(i => (i < images.length - 1 ? i + 1 : 0));
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [onClose, images.length]);
+
+  const next = (e) => { e.stopPropagation(); setIndex(i => (i < images.length - 1 ? i + 1 : 0)); };
+  const prev = (e) => { e.stopPropagation(); setIndex(i => (i > 0 ? i - 1 : images.length - 1)); };
+
+  const src = images[index];
 
   return (
     <div onClick={onClose}
@@ -1651,11 +1723,29 @@ function PhotoLightbox({ src, onClose }) {
           <div style={{ fontSize: 13 }}>The requested photo could not be retrieved.</div>
         </div>
       ) : (
-        <img src={src} alt="Entry photo" onClick={(e) => e.stopPropagation()} onError={() => setHasError(true)}
-          style={{
-            maxWidth: "90vw", maxHeight: "80vh", borderRadius: 10,
-            boxShadow: "0 8px 40px rgba(0,0,0,0.6)", objectFit: "contain",
-          }} />
+        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", maxWidth: "100%", maxHeight: "100%" }}>
+          <img src={src} alt={`Entry photo ${index + 1}`} onClick={(e) => e.stopPropagation()} onError={() => setHasError(true)}
+            style={{
+              maxWidth: "90vw", maxHeight: "80vh", borderRadius: 10,
+              boxShadow: "0 8px 40px rgba(0,0,0,0.6)", objectFit: "contain",
+            }} />
+          
+          {images.length > 1 && (
+            <>
+              <button onClick={prev} style={{ position: "absolute", left: -40, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", color: "#f3efe6", borderRadius: "50%", padding: 8, cursor: "pointer", display: "flex" }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <button onClick={next} style={{ position: "absolute", right: -40, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", border: "none", color: "#f3efe6", borderRadius: "50%", padding: 8, cursor: "pointer", display: "flex" }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+              <div style={{ position: "absolute", bottom: -32, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 8 }}>
+                {images.map((_, i) => (
+                  <button key={i} onClick={(e) => { e.stopPropagation(); setIndex(i); }} style={{ width: 8, height: 8, borderRadius: "50%", background: i === index ? P.gold : "rgba(255,255,255,0.3)", border: "none", padding: 0, cursor: "pointer" }} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

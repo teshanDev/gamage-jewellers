@@ -5,6 +5,19 @@ body, html {
   padding: 0;
   height: 100%;
   -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input, textarea {
+  user-select: auto;
+  -webkit-user-select: auto;
+}
+
+@media print {
+  body {
+    display: none !important;
+  }
 }
 
 #root {

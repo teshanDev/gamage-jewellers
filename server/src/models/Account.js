@@ -2,8 +2,8 @@ import mongoose from "mongoose";
 
 const accountSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true },
-    place: String,
+    name: { type: String, required: true, uppercase: true },
+    place: { type: String, uppercase: true },
     phone: String,
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     archived: { type: Boolean, default: false },

@@ -36,7 +36,7 @@ router.get("/", async (_req, res) => {
 //   SALE:   marginMg = round(weightMg * ratePct / 100) - weightMg  [gold earned above metal supplied]
 //   RETURN: marginMg = -(round(weightMg * ratePct / 100) - weightMg) [margin given back on return]
 //   GOLD_PAYMENT / CASH_PAYMENT: no rate premium → no margin contribution
-router.get("/stats", async (_req, res) => {
+router.get("/stats", requireAdmin, async (_req, res) => {
   try {
     const entries = await Entry.find({ status: "active" }).lean();
     const monthly = {};
@@ -136,28 +136,33 @@ router.patch("/:id/unarchive", requireAdmin, async (req, res) => {
   }
 });
 
-router.post("/:id/entries", upload.single("photo"), async (req, res) => {
+router.post("/:id/entries", upload.array("images", 5), async (req, res) => {
   try {
+    const cleanupFiles = () => {
+      if (req.files && req.files.length > 0) {
+        req.files.forEach(f => cloudinary.uploader.destroy(f.filename).catch(() => {}));
+      }
+    };
     const account = await Account.findById(req.params.id);
     if (!account) {
-      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      cleanupFiles();
       return res.status(404).json({ error: "Account not found" });
     }
     if (account.archived) {
-      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      cleanupFiles();
       return res.status(400).json({ error: "Cannot add entries to an archived account" });
     }
 
     const { date, type, details, weightMg, ratePct, cashCents, pricePerGramCents } = req.body;
 
     if (!date || !type || !details) {
-      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      cleanupFiles();
       return res.status(400).json({ error: "date, type, and details are required" });
     }
 
     const VALID = ["SALE", "RETURN", "GOLD_PAYMENT", "CASH_PAYMENT"];
     if (!VALID.includes(type)) {
-      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      cleanupFiles();
       return res.status(400).json({ error: `type must be one of: ${VALID.join(", ")}` });
     }
 
@@ -173,19 +178,19 @@ router.post("/:id/entries", upload.single("photo"), async (req, res) => {
     const parsedPricePerGramCents = parseNum(pricePerGramCents);
 
     if ((type === "SALE" || type === "RETURN") && (parsedWeightMg === undefined || parsedRatePct === undefined)) {
-      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      cleanupFiles();
       return res.status(400).json({ error: "weightMg and ratePct are required for SALE/RETURN" });
     }
     if (type === "GOLD_PAYMENT" && parsedWeightMg === undefined) {
-      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      cleanupFiles();
       return res.status(400).json({ error: "weightMg is required for GOLD_PAYMENT" });
     }
     if (type === "CASH_PAYMENT" && (parsedCashCents === undefined || parsedPricePerGramCents === undefined)) {
-      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      cleanupFiles();
       return res.status(400).json({ error: "cashCents and pricePerGramCents are required for CASH_PAYMENT" });
     }
 
-    const photo = req.file ? req.file.path : undefined;
+    const photos = req.files ? req.files.map(f => f.path) : [];
 
     res.status(201).json(
       await Entry.create({
@@ -197,12 +202,16 @@ router.post("/:id/entries", upload.single("photo"), async (req, res) => {
         ratePct: parsedRatePct,
         cashCents: parsedCashCents,
         pricePerGramCents: parsedPricePerGramCents,
-        photo,
+        photos,
         createdBy: req.user.sub
       })
     );
   } catch (err) {
-    if (req.file) fs.unlink(req.file.path, () => {});
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(f => {
+        try { fs.unlink(f.path, () => {}); } catch {}
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -213,6 +222,19 @@ router.delete("/:id", requireAdmin, async (req, res) => {
     if (!account) return res.status(404).json({ error: "Account not found" });
     if (!account.archived) return res.status(400).json({ error: "Account must be archived before it can be permanently deleted" });
 
+    const entries = await Entry.find({ accountId: account._id });
+    for (const entry of entries) {
+      if (entry.photos && entry.photos.length > 0) {
+        entry.photos.forEach(url => {
+          if (url.startsWith("http")) {
+            const parts = url.split("/");
+            const filename = parts.pop().split(".")[0];
+            const folder = parts.pop();
+            cloudinary.uploader.destroy(`${folder}/${filename}`).catch(() => {});
+          }
+        });
+      }
+    }
     await Entry.deleteMany({ accountId: account._id });
     await Account.findByIdAndDelete(account._id);
 

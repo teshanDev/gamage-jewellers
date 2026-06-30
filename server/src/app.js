@@ -8,6 +8,7 @@ import authRouter from "./routes/auth.js";
 import accountsRouter from "./routes/accounts.js";
 import entriesRouter from "./routes/entries.js";
 import usersRouter from "./routes/users.js";
+import analyticsRouter from "./routes/analytics.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,5 +32,6 @@ app.use("/api/auth", authRouter);
 app.use("/api/accounts", accountsRouter);
 app.use("/api/entries", entriesRouter);
 app.use("/api/users", usersRouter);
+app.use("/api/analytics", analyticsRouter);
 
 export default app;

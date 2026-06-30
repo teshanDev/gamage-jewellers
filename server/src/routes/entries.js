@@ -8,15 +8,21 @@ import upload from "../middleware/upload.js";
 const router = Router();
 router.use(requireAuth);
 
-router.patch("/:id", requireRole("admin", "staff"), upload.single("photo"), async (req, res) => {
+router.patch("/:id", requireRole("admin", "staff"), upload.array("images", 5), async (req, res) => {
   try {
+    const cleanupFiles = () => {
+      if (req.files && req.files.length > 0) {
+        req.files.forEach(f => cloudinary.uploader.destroy(f.filename).catch(() => {}));
+      }
+    };
+
     const entry = await Entry.findById(req.params.id);
     if (!entry) {
-      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      cleanupFiles();
       return res.status(404).json({ error: "Entry not found" });
     }
     if (entry.status === "voided") {
-      if (req.file) cloudinary.uploader.destroy(req.file.filename).catch(() => {});
+      cleanupFiles();
       return res.status(400).json({ error: "Cannot edit a voided entry" });
     }
 
@@ -32,7 +38,7 @@ router.patch("/:id", requireRole("admin", "staff"), upload.single("photo"), asyn
         ratePct: entry.ratePct,
         cashCents: entry.cashCents,
         pricePerGramCents: entry.pricePerGramCents,
-        photo: entry.photo,
+        photos: entry.photos,
       },
     });
 
@@ -55,42 +61,41 @@ router.patch("/:id", requireRole("admin", "staff"), upload.single("photo"), asyn
     if (parsedCashCents !== undefined) entry.cashCents = parsedCashCents;
     if (parsedPricePerGramCents !== undefined) entry.pricePerGramCents = parsedPricePerGramCents;
 
-    const oldPhoto = entry.photo;
-    let photoChanged = false;
+    const oldPhotos = entry.photos || [];
+    let photosChanged = false;
 
     if (removePhoto === "true" || removePhoto === true) {
-      entry.photo = undefined;
-      photoChanged = true;
+      entry.photos = [];
+      photosChanged = true;
     }
 
-    if (req.file) {
-      entry.photo = req.file.path;
-      photoChanged = true;
+    if (req.files && req.files.length > 0) {
+      entry.photos = req.files.map(f => f.path);
+      photosChanged = true;
     }
 
-    if (photoChanged && oldPhoto) {
-      try {
-        if (!oldPhoto.startsWith("http")) {
-          // Ignoring old local files cleanup for simplicity 
-        } else {
-          // Extract public_id from Cloudinary URL (e.g. gamage_jewellers/xyz)
-          const parts = oldPhoto.split("/");
-          const filename = parts.pop().split(".")[0];
-          const folder = parts.pop();
-          cloudinary.uploader.destroy(`${folder}/${filename}`).catch(() => {});
+    if (photosChanged && oldPhotos.length > 0) {
+      oldPhotos.forEach(url => {
+        try {
+          if (url.startsWith("http")) {
+            const parts = url.split("/");
+            const filename = parts.pop().split(".")[0];
+            const folder = parts.pop();
+            cloudinary.uploader.destroy(`${folder}/${filename}`).catch(() => {});
+          }
+        } catch (err) {
+          console.error("Failed to delete old photo:", err);
         }
-      } catch (err) {
-        console.error("Failed to delete old photo:", err);
-      }
+      });
     }
 
     await entry.save();
     res.json(entry);
   } catch (err) {
-    if (req.file) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch {}
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(f => {
+        try { fs.unlinkSync(f.path); } catch {}
+      });
     }
     res.status(500).json({ error: err.message });
   }

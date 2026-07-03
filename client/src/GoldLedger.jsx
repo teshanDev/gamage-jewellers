@@ -1030,7 +1030,7 @@ function OverviewPanel({ accounts, onSelect, stats }) {
 
   // Monthly chart data — reads from entryAmountMg results via /accounts/stats
   const monthlyData = stats.map(({ month, salesMg, settlementsMg }) => ({
-    month: new Date(month + "-02").toLocaleDateString("en-GB", { month: "short", year: "2-digit" }).replace(" ", " '"),
+    month: new Date(month + "-02").toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
     fullMonth: new Date(month + "-02").toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
     salesG:       salesMg       / 1000,
     settlementsG: settlementsMg / 1000,
@@ -1050,7 +1050,7 @@ function OverviewPanel({ accounts, onSelect, stats }) {
   const marginChartData = last12Keys.map((key) => {
     const entry = stats.find((s) => s.month === key);
     return {
-      month:   new Date(key + "-02").toLocaleDateString("en-GB", { month: "short", year: "2-digit" }).replace(" ", " '"),
+      month:   new Date(key + "-02").toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
       fullMonth: new Date(key + "-02").toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
       marginG: (entry?.marginMg ?? 0) / 1000,
     };

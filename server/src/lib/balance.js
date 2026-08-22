@@ -28,7 +28,7 @@ export function entryAmountMg(entry) {
 export function computeBalance(entries) {
   return entries
     .filter((e) => e.status === "active")
-    .reduce((sum, e) => sum + (e.amountMg ?? entryAmountMg(e)), 0);
+    .reduce((sum, e) => sum + entryAmountMg(e), 0);
 }
 
 export function buildRunningLedger(entries) {
@@ -38,7 +38,7 @@ export function buildRunningLedger(entries) {
 
   let running = 0;
   return sorted.map((e) => {
-    const amt = e.amountMg ?? entryAmountMg(e);
+    const amt = entryAmountMg(e);
     running += amt;
     const obj = typeof e.toObject === "function" ? e.toObject() : e;
     return { ...obj, amountMg: amt, runningBalanceMg: running };

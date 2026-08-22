@@ -15,68 +15,53 @@ router.get("/", async (_req, res) => {
   try {
     const accounts = await Account.find({ archived: false }).sort({ name: 1 }).lean();
     const ids = accounts.map((a) => a._id);
-    
-    const balances = await Entry.aggregate([
-      { $match: { accountId: { $in: ids }, status: "active" } },
-      { $group: { _id: "$accountId", balanceMg: { $sum: "$amountMg" } } }
-    ]);
-    
-    const balanceMap = {};
-    for (const b of balances) {
-      balanceMap[b._id.toString()] = b.balanceMg;
+    const entries = await Entry.find({ accountId: { $in: ids } }).lean();
+
+    const byAccount = {};
+    for (const e of entries) {
+      const key = e.accountId.toString();
+      (byAccount[key] ??= []).push(e);
     }
-    
-    res.json(accounts.map((a) => ({ ...a, balanceMg: balanceMap[a._id.toString()] || 0 })));
+
+    res.json(accounts.map((a) => ({ ...a, balanceMg: computeBalance(byAccount[a._id.toString()] ?? []) })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Monthly sales vs settlements + rate margin — used by overview charts.
+// All arithmetic uses entryAmountMg so totals match the ledger exactly.
+//
+// Rate margin per entry:
+//   SALE:   marginMg = round(weightMg * ratePct / 100) - weightMg  [gold earned above metal supplied]
+//   RETURN: marginMg = -(round(weightMg * ratePct / 100) - weightMg) [margin given back on return]
+//   GOLD_PAYMENT / CASH_PAYMENT: no rate premium → no margin contribution
 router.get("/stats", requireAdmin, async (_req, res) => {
   try {
-    const stats = await Entry.aggregate([
-      { $match: { status: "active" } },
-      {
-        $project: {
-          yearMonth: { $dateToString: { format: "%Y-%m", date: "$date" } },
-          type: 1,
-          amountMg: 1,
-          weightMg: { $ifNull: ["$weightMg", 0] }
-        }
-      },
-      {
-        $group: {
-          _id: "$yearMonth",
-          salesMg: {
-            $sum: { $cond: [{ $eq: ["$type", "SALE"] }, "$amountMg", 0] }
-          },
-          settlementsMg: {
-            $sum: {
-              $cond: [
-                { $in: ["$type", ["RETURN", "GOLD_PAYMENT", "CASH_PAYMENT"]] },
-                { $abs: "$amountMg" },
-                0
-              ]
-            }
-          },
-          marginMg: {
-            $sum: {
-              $switch: {
-                branches: [
-                  { case: { $eq: ["$type", "SALE"] }, then: { $subtract: ["$amountMg", "$weightMg"] } },
-                  { case: { $eq: ["$type", "RETURN"] }, then: { $subtract: [{ $multiply: ["$amountMg", -1] }, "$weightMg"] } }
-                ],
-                default: 0
-              }
-            }
-          }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
-    
-    res.json(stats.map(s => ({ month: s._id, salesMg: s.salesMg, settlementsMg: s.settlementsMg, marginMg: s.marginMg })));
+    const entries = await Entry.find({ status: "active" }).lean();
+    const monthly = {};
+    for (const e of entries) {
+      const d = new Date(e.date);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const key = `${year}-${month}`;
+      if (!monthly[key]) monthly[key] = { salesMg: 0, settlementsMg: 0, marginMg: 0 };
+      const amt = entryAmountMg(e); // integer mg, matches ledger
+      if (e.type === "SALE") {
+        monthly[key].salesMg  += amt;
+        monthly[key].marginMg += amt - e.weightMg;           // earned above metal supplied
+      } else if (e.type === "RETURN") {
+        monthly[key].settlementsMg += Math.abs(amt);
+        monthly[key].marginMg      -= Math.abs(amt) - e.weightMg; // subtract margin given back
+      } else {
+        monthly[key].settlementsMg += Math.abs(amt);          // GOLD_PAYMENT, CASH_PAYMENT
+      }
+    }
+    res.json(
+      Object.entries(monthly)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, v]) => ({ month, ...v }))
+    );
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -87,18 +72,15 @@ router.get("/archived", requireAdmin, async (_req, res) => {
   try {
     const accounts = await Account.find({ archived: true }).sort({ name: 1 }).lean();
     const ids = accounts.map((a) => a._id);
-    
-    const balances = await Entry.aggregate([
-      { $match: { accountId: { $in: ids }, status: "active" } },
-      { $group: { _id: "$accountId", balanceMg: { $sum: "$amountMg" } } }
-    ]);
-    
-    const balanceMap = {};
-    for (const b of balances) {
-      balanceMap[b._id.toString()] = b.balanceMg;
+    const entries = await Entry.find({ accountId: { $in: ids } }).lean();
+
+    const byAccount = {};
+    for (const e of entries) {
+      const key = e.accountId.toString();
+      (byAccount[key] ??= []).push(e);
     }
-    
-    res.json(accounts.map((a) => ({ ...a, balanceMg: balanceMap[a._id.toString()] || 0 })));
+
+    res.json(accounts.map((a) => ({ ...a, balanceMg: computeBalance(byAccount[a._id.toString()] ?? []) })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

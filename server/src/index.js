@@ -13,9 +13,7 @@ if (!MONGODB_URI) {
 mongoose
   .connect(MONGODB_URI)
   .then(() => {
-    const server = app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
-    server.keepAliveTimeout = 120000;
-    server.headersTimeout = 120000;
+    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
   })
   .catch((err) => {
     console.error("MongoDB connection failed:", err.message);

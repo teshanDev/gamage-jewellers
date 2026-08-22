@@ -19,8 +19,17 @@ const entrySchema = new mongoose.Schema(
     status: { type: String, enum: ["active", "voided"], default: "active" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     history: [historySchema],
+    amountMg: Number,
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );
+
+entrySchema.index({ accountId: 1, status: 1, date: 1 });
+
+import { entryAmountMg } from "../lib/balance.js";
+entrySchema.pre("save", function (next) {
+  this.amountMg = entryAmountMg(this);
+  next();
+});
 
 export default mongoose.model("Entry", entrySchema);

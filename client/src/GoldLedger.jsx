@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Menu, X, Camera, Trash2 } from "lucide-react";
 import HorseMark from "./HorseMark.jsx";
 import { formatGoldWeight } from "./goldRounding.js";
+import WastagePercentageCalculator from "./WastagePercentageCalculator.jsx";
+import CostCalculator from "./CostCalculator.jsx";
 import {
   AreaChart, Area, BarChart, Bar,
   LineChart, Line,
@@ -101,7 +103,7 @@ const TYPE_META = {
 export default function GoldLedger({ token, user, onLogout }) {
   const isAdmin = user?.role === "admin";
 
-  const [view,             setView]             = useState(isAdmin ? "overview" : "accounts"); // "overview"|"accounts"|"users"|"profile"
+  const [view,             setView]             = useState(isAdmin ? "overview" : "accounts"); // "overview"|"accounts"|"users"|"profile"|"wastageCalculator"|"costCalculator"
 
   useEffect(() => {
     if (view === "overview" && !isAdmin) {
@@ -625,6 +627,8 @@ export default function GoldLedger({ token, user, onLogout }) {
         <div style={{ flex: 1, padding: "0 10px", display: "flex", flexDirection: "column", gap: 2 }}>
           {isAdmin && <NavItem id="overview" label="Overview" />}
           <NavItem id="accounts" label="Accounts" />
+          <NavItem id="wastageCalculator" label="Wastage % Calc" />
+          <NavItem id="costCalculator" label="Cost Calc" />
           {isAdmin && <NavItem id="users" label="Users & Access" />}
           <NavItem id="profile" label="My Profile" />
         </div>
@@ -711,6 +715,14 @@ export default function GoldLedger({ token, user, onLogout }) {
           loadingList
             ? <div style={{ color: P.mute, fontStyle: "italic", marginTop: 80, textAlign: "center" }}>Loading…</div>
             : <OverviewPanel accounts={accounts} onSelect={selectAccount} stats={stats} />
+        )}
+
+        {view === "wastageCalculator" && (
+          <WastagePercentageCalculator token={token} API_BASE={API_BASE} />
+        )}
+
+        {view === "costCalculator" && (
+          <CostCalculator token={token} API_BASE={API_BASE} />
         )}
 
         {/* Accounts view */}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useLocation, useNavigate, Routes, Route } from "react-router-dom";
 import { Menu, X, Camera, Trash2 } from "lucide-react";
 import HorseMark from "./HorseMark.jsx";
 import { formatGoldWeight } from "./goldRounding.js";
@@ -8,6 +9,8 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, Cell,
 } from "recharts";
+import WastageCalculator from "./components/WastageCalculator.jsx";
+import CostCalculator from "./components/CostCalculator.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -312,12 +315,23 @@ export default function GoldLedger({ token, user, onLogout }) {
     } finally { setLoadingLedger(false); }
   }, [api]);
 
+  const location = useLocation();
+  const routerNavigate = useNavigate();
+  const isCalculatorRoute = location.pathname.startsWith("/calculators");
+
   useEffect(() => { loadAccounts(); }, [loadAccounts]);
   useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => { if (isAdmin) loadArchivedAccounts(); }, [isAdmin, loadArchivedAccounts]);
   useEffect(() => { setActiveAccount(null); loadLedger(activeId); }, [activeId, loadLedger]);
 
   const navigate = (newView) => {
+    if (newView.startsWith("/calculators")) {
+      routerNavigate(newView);
+      return;
+    }
+    if (isCalculatorRoute) {
+      routerNavigate("/");
+    }
     setView(newView);
     setError(null);
     if (newView === "accounts") {
@@ -331,6 +345,9 @@ export default function GoldLedger({ token, user, onLogout }) {
   };
 
   const selectAccount = (id) => {
+    if (isCalculatorRoute) {
+      routerNavigate("/");
+    }
     setActiveId(id);
     setView("accounts");
     setShowAddEntry(false);
@@ -434,14 +451,27 @@ export default function GoldLedger({ token, user, onLogout }) {
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
         <circle cx="12" cy="7" r="4" />
       </svg>
+    ),
+    wastage: () => (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="8" y1="12" x2="16" y2="12"></line>
+        <line x1="12" y1="8" x2="12" y2="16"></line>
+      </svg>
+    ),
+    cost: () => (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+        <line x1="12" y1="1" x2="12" y2="23"></line>
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+      </svg>
     )
   };
 
-  const NavItem = ({ id, label }) => {
-    const active = view === id;
+  const NavItem = ({ id, label, to }) => {
+    const active = to ? location.pathname === to : (!isCalculatorRoute && view === id);
     const IconComponent = NAV_ICONS[id];
     return (
-      <button onClick={() => { navigate(id); if (isMobile) setShowMobileSidebar(false); }}
+      <button onClick={() => { navigate(to || id); if (isMobile) setShowMobileSidebar(false); }}
         className={`nav-item ${active ? "active" : ""} ${effectiveCollapsed ? "collapsed" : ""}`}
         style={{
           display: "flex",
@@ -625,6 +655,8 @@ export default function GoldLedger({ token, user, onLogout }) {
         <div style={{ flex: 1, padding: "0 10px", display: "flex", flexDirection: "column", gap: 2 }}>
           {isAdmin && <NavItem id="overview" label="Overview" />}
           <NavItem id="accounts" label="Accounts" />
+          <NavItem id="wastage" label="Wastage Calc" to="/calculators/wastage" />
+          <NavItem id="cost" label="Cost Calc" to="/calculators/cost" />
           {isAdmin && <NavItem id="users" label="Users & Access" />}
           <NavItem id="profile" label="My Profile" />
         </div>
@@ -707,14 +739,14 @@ export default function GoldLedger({ token, user, onLogout }) {
         )}
 
         {/* Overview */}
-        {view === "overview" && isAdmin && (
+        {!isCalculatorRoute && view === "overview" && isAdmin && (
           loadingList
             ? <div style={{ color: P.mute, fontStyle: "italic", marginTop: 80, textAlign: "center" }}>Loading…</div>
             : <OverviewPanel accounts={accounts} onSelect={selectAccount} stats={stats} />
         )}
 
         {/* Accounts view */}
-        {view === "accounts" && (
+        {!isCalculatorRoute && view === "accounts" && (
           !activeId ? (
             // View A: Accounts Directory
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -981,12 +1013,17 @@ export default function GoldLedger({ token, user, onLogout }) {
         )}
 
         {/* Users & Access */}
-        {view === "users" && (
+        {!isCalculatorRoute && view === "users" && (
           <UserManagement api={api} currentUserId={user?.sub ?? user?._id} />
         )}
 
         {/* My Profile */}
-        {view === "profile" && <MyProfile user={user} />}
+        {!isCalculatorRoute && view === "profile" && <MyProfile user={user} />}
+
+        <Routes>
+          <Route path="/calculators/wastage" element={<WastageCalculator token={token} />} />
+          <Route path="/calculators/cost" element={<CostCalculator token={token} />} />
+        </Routes>
 
       </main>
 

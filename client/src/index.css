@@ -4,6 +4,7 @@ body, html {
   margin: 0;
   padding: 0;
   height: 100%;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-user-select: none;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation, useNavigate, Routes, Route } from "react-router-dom";
-import { Menu, X, Camera, Trash2 } from "lucide-react";
+import { Menu, X, Camera, Trash2, FileText } from "lucide-react";
 import HorseMark from "./HorseMark.jsx";
 import { formatGoldWeight } from "./goldRounding.js";
 import {
@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import WastageCalculator from "./components/WastageCalculator.jsx";
 import CostCalculator from "./components/CostCalculator.jsx";
+import Documents from "./components/Documents.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -136,6 +137,8 @@ export default function GoldLedger({ token, user, onLogout }) {
   const [liveDeviceCount,  setLiveDeviceCount]  = useState(1);
 
   useEffect(() => {
+    if (!token) return;
+    
     let deviceId = sessionStorage.getItem("deviceId");
     if (!deviceId) {
       deviceId = Math.random().toString(36).substring(2, 15);
@@ -145,14 +148,25 @@ export default function GoldLedger({ token, user, onLogout }) {
     const sendHeartbeat = () => {
       fetch(`${API_BASE}/api/analytics/heartbeat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ deviceId })
+      }).then(res => {
+        if (res.status === 502) console.warn("Backend unreachable (Heartbeat)");
       }).catch(() => {});
     };
 
     const fetchLiveCount = () => {
-      fetch(`${API_BASE}/api/analytics/live-count`)
-        .then(res => res.json())
+      fetch(`${API_BASE}/api/analytics/live-count`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+        .then(res => {
+          if (res.status === 502) {
+            console.warn("Backend unreachable (Live Count)");
+            throw new Error("502");
+          }
+          if (!res.ok) throw new Error("Not OK");
+          return res.json();
+        })
         .then(data => { if (data && typeof data.count === 'number') setLiveDeviceCount(data.count); })
         .catch(() => {});
     };
@@ -166,7 +180,7 @@ export default function GoldLedger({ token, user, onLogout }) {
       clearInterval(hbInterval);
       clearInterval(countInterval);
     };
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -235,7 +249,15 @@ export default function GoldLedger({ token, user, onLogout }) {
         body: opts.body != null ? JSON.stringify(opts.body) : undefined,
       });
       if (res.status === 401) { onLogout(); throw new Error("Session expired"); }
-      const data = await res.json();
+      if (res.status === 502) { throw new Error("Backend unreachable"); }
+      
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (err) {
+        if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+      }
+
       if (res.status === 403 && data.error === "outside_operating_hours") {
         onLogout("outside_operating_hours");
         throw new Error(data.message || "Access Denied: The system is currently closed. Operating hours for your role are 7:00 AM to 8:00 PM.");
@@ -255,7 +277,15 @@ export default function GoldLedger({ token, user, onLogout }) {
         body: fd,
       });
       if (res.status === 401) { onLogout(); throw new Error("Session expired"); }
-      const data = await res.json();
+      if (res.status === 502) { throw new Error("Backend unreachable"); }
+
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (err) {
+        if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+      }
+
       if (res.status === 403 && data.error === "outside_operating_hours") {
         onLogout("outside_operating_hours");
         throw new Error(data.message || "Access Denied: The system is currently closed. Operating hours for your role are 7:00 AM to 8:00 PM.");
@@ -317,7 +347,7 @@ export default function GoldLedger({ token, user, onLogout }) {
 
   const location = useLocation();
   const routerNavigate = useNavigate();
-  const isCalculatorRoute = location.pathname.startsWith("/calculators");
+  const isCalculatorRoute = location.pathname.startsWith("/calculators") || location.pathname.startsWith("/documents");
 
   useEffect(() => { loadAccounts(); }, [loadAccounts]);
   useEffect(() => { loadStats(); }, [loadStats]);
@@ -325,7 +355,7 @@ export default function GoldLedger({ token, user, onLogout }) {
   useEffect(() => { setActiveAccount(null); loadLedger(activeId); }, [activeId, loadLedger]);
 
   const navigate = (newView) => {
-    if (newView.startsWith("/calculators")) {
+    if (newView.startsWith("/calculators") || newView.startsWith("/documents")) {
       routerNavigate(newView);
       return;
     }
@@ -452,6 +482,7 @@ export default function GoldLedger({ token, user, onLogout }) {
         <circle cx="12" cy="7" r="4" />
       </svg>
     ),
+    documents: () => <FileText size={16} style={{ display: "block" }} />,
     wastage: () => (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
         <circle cx="12" cy="12" r="10"></circle>
@@ -658,6 +689,7 @@ export default function GoldLedger({ token, user, onLogout }) {
           <NavItem id="wastage" label="Wastage Calc" to="/calculators/wastage" />
           <NavItem id="cost" label="Cost Calc" to="/calculators/cost" />
           {isAdmin && <NavItem id="users" label="Users & Access" />}
+          <NavItem id="documents" label="Documents" to="/documents" />
           <NavItem id="profile" label="My Profile" />
         </div>
 
@@ -786,7 +818,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                         onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.borderColor = P.gold; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = P.panel; e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.borderColor = P.line; }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-                          <div className="uppercase" style={{ fontSize: 18, color: P.paper, fontFamily: "Georgia, serif", fontWeight: "bold", textTransform: "uppercase" }}>{a.name}</div>
+                          <div className="uppercase" style={{ fontSize: 18, color: P.paper, fontFamily: "inherit", fontWeight: "bold", textTransform: "uppercase" }}>{a.name}</div>
                           {a.archived && (
                             <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: P.mute, border: `1px solid ${P.line}`, borderRadius: 4, padding: "2px 6px" }}>Archived</span>
                           )}
@@ -889,7 +921,7 @@ export default function GoldLedger({ token, user, onLogout }) {
                     const m = TYPE_META[r.type];
                     return (
                       <div key={r._id} className="ledger-row" style={{ display: "grid", gridTemplateColumns: "88px 70px 1fr 120px 110px 130px 64px", padding: "12px 14px", borderTop: `1px solid ${P.line}`, alignItems: "center" }}>
-                        <span style={{ color: P.mute, fontFamily: "Georgia, serif", fontSize: 13 }}>
+                        <span style={{ color: P.mute, fontFamily: "inherit", fontSize: 13 }}>
                           {new Date(r.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
                         </span>
                         
@@ -921,12 +953,12 @@ export default function GoldLedger({ token, user, onLogout }) {
                           )}
                         </div>
 
-                        <span style={{ fontFamily: "Georgia, serif", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                        <span style={{ fontFamily: "inherit", display: "flex", flexDirection: "column", justifyContent: "center" }}>
                           <span style={{ color: P.paper, fontSize: 15, fontWeight: 600 }}>{r.details}</span>
                           <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{describe(r)}</div>
                           <div style={{ fontSize: 10, color: "#737373", marginTop: 2 }}>{lastEditor(r)}</div>
                         </span>
-                        <span style={{ color: m.color, fontFamily: "Georgia, serif", fontSize: 12 }}>{m.label}</span>
+                        <span style={{ color: m.color, fontFamily: "inherit", fontSize: 12 }}>{m.label}</span>
                         <span style={{ textAlign: "right", fontFamily: "'SF Mono', Menlo, monospace", fontSize: 13, color: r.amountMg >= 0 ? P.gold : P.green }}>
                           {r.amountMg >= 0 ? "+" : ""}{mgToG(r.amountMg)}
                         </span>
@@ -1023,6 +1055,8 @@ export default function GoldLedger({ token, user, onLogout }) {
         <Routes>
           <Route path="/calculators/wastage" element={<WastageCalculator token={token} />} />
           <Route path="/calculators/cost" element={<CostCalculator token={token} />} />
+          <Route path="/documents" element={<Documents token={token} />} />
+          <Route path="*" element={null} />
         </Routes>
 
       </main>
@@ -1041,7 +1075,7 @@ export default function GoldLedger({ token, user, onLogout }) {
 function ChartTooltip({ active, payload, label, unit = "g" }) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: P.panel, border: `1px solid ${P.line}`, borderRadius: 8, padding: "10px 14px", fontSize: 12, fontFamily: "Georgia, serif" }}>
+    <div style={{ background: P.panel, border: `1px solid ${P.line}`, borderRadius: 8, padding: "10px 14px", fontSize: 12, fontFamily: "inherit" }}>
       <div style={{ color: P.mute, marginBottom: 6 }}>{payload[0]?.payload?.fullMonth || label}</div>
       {payload.map((p) => (
         <div key={p.dataKey} style={{ color: p.color, marginTop: 2 }}>
@@ -1150,7 +1184,7 @@ function OverviewPanel({ accounts, onSelect, stats }) {
                   <BarChart data={topAccounts} layout="vertical" margin={{ left: 0, right: 20, top: 0, bottom: 0 }}>
                     <CartesianGrid horizontal={false} stroke={P.line} />
                     <XAxis type="number" dataKey="balanceG" tick={{ fill: P.mute, fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v) => v.toFixed(1)} unit=" g" />
-                    <YAxis type="category" dataKey="name" tick={{ fill: P.mute, fontSize: 11, fontFamily: "Georgia, serif" }} tickLine={false} axisLine={false} width={90} />
+                    <YAxis type="category" dataKey="name" tick={{ fill: P.mute, fontSize: 11, fontFamily: "inherit" }} tickLine={false} axisLine={false} width={90} />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="balanceG" name="Balance" radius={[0, 4, 4, 0]}>
                       {topAccounts.map((_, i) => <Cell key={i} fill={P.gold} fillOpacity={0.7 + (i / topAccounts.length) * 0.3} />)}
@@ -1200,7 +1234,7 @@ function OverviewPanel({ accounts, onSelect, stats }) {
                   style={{ display: "grid", gridTemplateColumns: "1fr 120px 160px", padding: "12px 16px", borderTop: `1px solid ${P.line}`, alignItems: "center", cursor: "pointer" }}
                   onMouseEnter={(e) => e.currentTarget.style.background = P.panel}
                   onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                  <span className="uppercase" style={{ fontFamily: "Georgia, serif", fontSize: 14, color: P.paper, textTransform: "uppercase" }}>{a.name}</span>
+                  <span className="uppercase" style={{ fontFamily: "inherit", fontSize: 14, color: P.paper, textTransform: "uppercase" }}>{a.name}</span>
                   <span className="uppercase" style={{ fontStyle: "italic", color: P.mute, fontSize: 13, textTransform: "uppercase" }}>{a.place}</span>
                   <span style={{ textAlign: "right", fontFamily: "'SF Mono', Menlo, monospace", fontSize: 14, color: bal < 0 ? P.red : bal === 0 ? P.mute : P.gold }}>
                     {bal < 0 ? "−" : ""}{mgToG(Math.abs(bal))}
@@ -1439,7 +1473,7 @@ function UserManagement({ api, currentUserId }) {
     const isSelf = u._id === currentUserId;
     return (
       <div style={{ display: "grid", gridTemplateColumns: "1fr 200px 130px 100px 80px", padding: "12px 16px", borderTop: `1px solid ${P.line}`, alignItems: "center", opacity: dimmed ? 0.5 : 1 }}>
-        <span style={{ fontFamily: "Georgia, serif", fontSize: 14, color: P.paper }}>
+        <span style={{ fontFamily: "inherit", fontSize: 14, color: P.paper }}>
           {u.name}{isSelf && <span style={{ fontSize: 10, color: P.mute, marginLeft: 6, textTransform: "uppercase" }}>you</span>}
         </span>
         <span style={{ fontSize: 13, color: P.mute }}>{u.email}</span>
@@ -1756,7 +1790,7 @@ function PhotoLightbox({ images, initialIndex = 0, onClose }) {
             <circle cx="12" cy="13" r="4"></circle>
             <line x1="4" y1="4" x2="20" y2="20"></line>
           </svg>
-          <div style={{ fontSize: 16, fontFamily: "Georgia, serif", color: "#f3efe6" }}>Image Failed to Load</div>
+          <div style={{ fontSize: 16, fontFamily: "inherit", color: "#f3efe6" }}>Image Failed to Load</div>
           <div style={{ fontSize: 13 }}>The requested photo could not be retrieved.</div>
         </div>
       ) : (

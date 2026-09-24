@@ -93,4 +93,30 @@ router.get("/cost", async (req, res) => {
   }
 });
 
+router.delete("/wastage/:id", async (req, res) => {
+  try {
+    const doc = await CalculationRecord.findById(req.params.id);
+    if (!doc || doc.type !== "WASTAGE") {
+      return res.status(404).json({ error: "Record not found" });
+    }
+    await CalculationRecord.findByIdAndDelete(req.params.id);
+    res.json({ message: "Deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/cost/:id", async (req, res) => {
+  try {
+    const doc = await CalculationRecord.findById(req.params.id);
+    if (!doc || doc.type !== "COST") {
+      return res.status(404).json({ error: "Record not found" });
+    }
+    await CalculationRecord.findByIdAndDelete(req.params.id);
+    res.json({ message: "Deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

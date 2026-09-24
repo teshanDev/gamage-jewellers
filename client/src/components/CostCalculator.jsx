@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Trash2 } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const P = { ink: "#000", paper: "#fff", panel: "#111", gold: "#eab308", line: "#333", mute: "#9ca3af" };
@@ -53,6 +54,24 @@ export default function CostCalculator({ token }) {
     }
   };
 
+  const handleDelete = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this calculation record?")) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/calculators/cost/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setHistory(history.filter(record => record._id !== id));
+      } else {
+        const data = await res.json();
+        console.error("Delete failed:", data.error);
+      }
+    } catch (err) {
+      console.error("Delete error:", err);
+    }
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return "—";
     return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -60,7 +79,7 @@ export default function CostCalculator({ token }) {
 
   return (
     <div style={{ maxWidth: 800, margin: "0 auto", padding: 20 }}>
-      <h2 style={{ color: P.gold, fontFamily: "Georgia, serif", fontSize: 24, marginBottom: 20 }}>Cost Calculator</h2>
+      <h2 style={{ color: P.gold, fontFamily: "inherit", fontSize: 24, marginBottom: 20 }}>Cost Calculator</h2>
       
       <div style={{ display: "flex", gap: 30, flexDirection: "column" }}>
         <form onSubmit={handleCalculate} style={{ display: "flex", flexDirection: "column", gap: 16, background: P.panel, padding: 20, borderRadius: 10, border: `1px solid ${P.line}` }}>
@@ -92,7 +111,7 @@ export default function CostCalculator({ token }) {
         )}
 
         <div style={{ marginTop: 20 }}>
-          <h3 style={{ color: P.paper, fontFamily: "Georgia, serif", fontSize: 20, marginBottom: 16 }}>History</h3>
+          <h3 style={{ color: P.paper, fontFamily: "inherit", fontSize: 20, marginBottom: 16 }}>History</h3>
           {loading ? (
             <div style={{ color: P.mute }}>Loading history...</div>
           ) : history.length === 0 ? (
@@ -106,6 +125,7 @@ export default function CostCalculator({ token }) {
                     <th style={{ padding: "12px 14px", borderBottom: `1px solid ${P.line}`, fontWeight: "normal" }}>Percentage</th>
                     <th style={{ padding: "12px 14px", borderBottom: `1px solid ${P.line}`, fontWeight: "normal" }}>Init Weight (g)</th>
                     <th style={{ padding: "12px 14px", borderBottom: `1px solid ${P.line}`, fontWeight: "normal", textAlign: "right" }}>Cost (Rs)</th>
+                    <th style={{ padding: "12px 14px", borderBottom: `1px solid ${P.line}`, fontWeight: "normal", width: "40px" }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -115,10 +135,20 @@ export default function CostCalculator({ token }) {
                     const outputs = record.outputs || {};
                     return (
                       <tr key={record._id} style={{ borderBottom: `1px solid ${P.line}` }}>
-                        <td style={{ padding: "12px 14px", color: P.paper }}>{formatDate(date)}</td>
-                        <td style={{ padding: "12px 14px", color: P.mute }}>{inputs.percentage != null ? `${inputs.percentage}%` : "—"}</td>
-                        <td style={{ padding: "12px 14px", color: P.mute }}>{inputs.initialWeight22k ?? "—"}</td>
-                        <td style={{ padding: "12px 14px", color: P.gold, fontWeight: "bold", textAlign: "right" }}>{outputs.costRs != null ? outputs.costRs.toLocaleString() : "—"}</td>
+                        <td style={{ padding: "12px 14px", color: P.paper }} className="font-sans tabular-nums lining-nums">{formatDate(date)}</td>
+                        <td style={{ padding: "12px 14px", color: P.mute }} className="font-sans tabular-nums lining-nums">{inputs.percentage != null ? `${inputs.percentage}%` : "—"}</td>
+                        <td style={{ padding: "12px 14px", color: P.mute }} className="font-sans tabular-nums lining-nums">{inputs.initialWeight22k ?? "—"}</td>
+                        <td style={{ padding: "12px 14px", color: P.gold, fontWeight: "bold", textAlign: "right" }} className="font-sans tabular-nums lining-nums">{outputs.costRs != null ? outputs.costRs.toLocaleString() : "—"}</td>
+                        <td style={{ padding: "12px 14px", textAlign: "right" }}>
+                          <button 
+                            onClick={() => handleDelete(record._id)}
+                            className="text-gray-500 hover:text-red-500 transition-colors"
+                            style={{ background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                            title="Delete Record"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
